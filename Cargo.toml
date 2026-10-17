@@ -1,17 +1,23 @@
 [package]
-name = "crate-name"
+name = "kiki-rust-linter"
 version = "0.1.0"
 edition = "2024"
 
-description = ""
+description = "A Rust source linter for enforcing Kiki's code organization and style conventions."
 # documentation = "https://docs.rs/crate-name"
 # homepage = ""
 license = "MIT"
 readme = "./README.md"
-repository = ""
+repository = "https://github.com/kikiutils/rs-linter"
 
-categories = []
-keywords = []
+categories = ["development-tools", "command-line-utilities"]
+keywords = [
+  "rust",
+  "lint",
+  "linter",
+  "style",
+  "code-quality"
+]
 
 include = [
   "Cargo.toml",
@@ -154,6 +160,18 @@ full = ["all"]
 # =============================================================================
 
 [dependencies]
+anyhow = "1.0.104"
+ignore = "0.4.33"
+kikiutils = { version = "0.12.1", features = ["fx-collections", "logger"] }
+pathkit = { version = "2.0.0", features = ["async-fs-ops"] }
+ra_ap_hir = "0.0.358"
+ra_ap_ide_db = "0.0.358"
+ra_ap_load-cargo = "0.0.358"
+ra_ap_syntax = "0.0.358"
+thiserror = "2.0.21"
+tokio = { version = "1.53.3", features = ["macros", "rt-multi-thread"] }
+tokio-util = { version = "0.7.20", features = [] }
+tracing = "0.1.44"
 
 # -----------------------------------------------------------------------------
 # OS / family-specific dependencies
@@ -275,6 +293,8 @@ full = ["all"]
 
 # Test/example/bench-only dependencies.
 [dev-dependencies]
+expect-test = "1.5.1"
+tempfile = "3.27.0"
 
 
 # -----------------------------------------------------------------------------
