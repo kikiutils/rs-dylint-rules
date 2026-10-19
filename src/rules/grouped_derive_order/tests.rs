@@ -4,10 +4,7 @@ use ra_ap_syntax::{
     SourceFile,
 };
 
-use super::analysis::{
-    self,
-    ORDER,
-};
+use super::analysis;
 use crate::diagnostic::RuleOutput;
 
 fn check(source: &str) -> RuleOutput {
@@ -15,7 +12,7 @@ fn check(source: &str) -> RuleOutput {
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     analysis::analyze(parsed.tree().syntax(), |range| {
         let name = &source[std::ops::Range::<usize>::from(range)];
-        ORDER.iter().position(|known| *known == name)
+        analysis::sort_key(name)
     })
 }
 
@@ -91,10 +88,19 @@ fn preserves_path_spelling_trailing_comma_and_raw_crlf_offsets() {
     let parsed = SourceFile::parse(source, Edition::Edition2024);
     let output = analysis::analyze(parsed.tree().syntax(), |range| {
         let name = source[std::ops::Range::<usize>::from(range)].rsplit("::").next()?;
-        ORDER.iter().position(|known| *known == name)
+        analysis::sort_key(name)
     });
     assert_eq!(
         apply(source, &output),
         "const LABEL: &str = \"型別\";\r\n#[derive(core::cmp::PartialEq, core::cmp::Eq,)]\r\nstruct Value;\r\n"
+    );
+}
+
+#[test]
+fn serialization_group_follows_builtins_and_keeps_its_own_fixed_order() {
+    let source = "#[derive(Deserialize, Hash, Serialize, Eq, PartialEq, Debug)]\nstruct Value;\n";
+    assert_eq!(
+        apply(source, &check(source)),
+        "#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]\nstruct Value;\n"
     );
 }

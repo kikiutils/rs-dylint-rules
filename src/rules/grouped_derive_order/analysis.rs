@@ -14,19 +14,27 @@ use crate::diagnostic::{
     RuleOutput,
 };
 
-pub(super) const ORDER: &[&str] = &[
-    "Debug",
-    "Clone",
-    "Copy",
-    "Default",
-    "PartialEq",
-    "Eq",
-    "PartialOrd",
-    "Ord",
-    "Hash",
+pub(super) const GROUPS: &[&[&str]] = &[
+    &["Debug"],
+    &["Clone", "Copy"],
+    &["Default"],
+    &["PartialEq", "Eq", "PartialOrd", "Ord", "Hash"],
+    &["Serialize", "Deserialize"],
 ];
 
-pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<usize>) -> RuleOutput {
+// Group order first, then the fixed position within that group.
+pub(super) type SortKey = (usize, usize);
+
+pub(super) fn sort_key(name: &str) -> Option<SortKey> {
+    GROUPS.iter().enumerate().find_map(|(group, names)| {
+        names
+            .iter()
+            .position(|known| *known == name)
+            .map(|position| (group, position))
+    })
+}
+
+pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<SortKey>) -> RuleOutput {
     let mut output = RuleOutput::default();
     let source = root.text().to_string();
     let base = root.text_range().start();
@@ -71,17 +79,23 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<u
         if !supported || paths.len() < 2 {
             continue;
         }
-        let Some(ranks) = paths.iter().map(|range| resolve(*range)).collect::<Option<Vec<_>>>() else {
+        let Some(keys) = paths.iter().map(|range| resolve(*range)).collect::<Option<Vec<_>>>() else {
             continue;
         };
-        if ranks.windows(2).all(|pair| pair[0] <= pair[1]) {
+        if keys.windows(2).all(|pair| pair[0] <= pair[1]) {
             continue;
         }
         let range = attribute.syntax().text_range();
         let diagnostic = Diagnostic {
             range,
-            message: "expected derives grouped as Debug; Clone, Copy; Default; PartialEq, Eq, PartialOrd, Ord, Hash"
-                .into(),
+            message: format!(
+                "expected derives grouped as {}",
+                GROUPS
+                    .iter()
+                    .map(|group| group.join(", "))
+                    .collect::<Vec<_>>()
+                    .join("; ")
+            ),
         };
         let protected = attribute.syntax().ancestors().skip(1).any(|ancestor| {
             ancestor
@@ -97,8 +111,8 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<u
             output.report(diagnostic);
             continue;
         }
-        let mut ordered: Vec<_> = paths.iter().zip(ranks).collect();
-        ordered.sort_by_key(|(_, rank)| *rank);
+        let mut ordered: Vec<_> = paths.iter().zip(keys).collect();
+        ordered.sort_by_key(|(_, key)| *key);
         let mut replacement = ordered
             .iter()
             .map(|(range, _)| source[std::ops::Range::<usize>::from(**range - base)].to_owned())

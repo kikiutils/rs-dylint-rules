@@ -29,7 +29,7 @@ use rustc_span::{
 
 use super::analysis;
 
-declare_lint! { pub KIKI_GROUPED_DERIVE_ORDER, Warn, "group known built-in derives in a consistent order" }
+declare_lint! { pub KIKI_GROUPED_DERIVE_ORDER, Warn, "group supported derives in a consistent order" }
 
 pub(super) fn register(store: &mut rustc_lint::LintStore) {
     store.register_lints(&[KIKI_GROUPED_DERIVE_ORDER]);
@@ -43,14 +43,14 @@ struct GroupedDeriveOrder {
 
 struct FileFacts {
     anchor: Span,
-    derives: BTreeMap<(u32, u32), (Option<usize>, hir::HirId)>,
+    derives: BTreeMap<(u32, u32), (Option<analysis::SortKey>, hir::HirId)>,
 }
 
 impl_lint_pass!(GroupedDeriveOrder => [KIKI_GROUPED_DERIVE_ORDER]);
 
 impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
     fn check_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx hir::Item<'tcx>) {
-        if !matches!(item.kind, hir::ItemKind::Impl(_)) || !cx.tcx.is_builtin_derived(item.owner_id.to_def_id()) {
+        if !matches!(item.kind, hir::ItemKind::Impl(_)) {
             return;
         }
         let expansion = item.span.ctxt().outer_expn_data();
@@ -61,7 +61,14 @@ impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
             return;
         };
         let name = cx.tcx.item_name(definition);
-        let Some(rank) = analysis::ORDER.iter().position(|known| *known == name.as_str()) else {
+        let builtin = cx.tcx.is_builtin_derived(item.owner_id.to_def_id());
+        let serde = cx.tcx.crate_name(definition.krate).as_str() == "serde_derive"
+            && matches!(name.as_str(), "Serialize" | "Deserialize")
+            && cx.tcx.is_automatically_derived(item.owner_id.to_def_id());
+        if !builtin && !serde {
+            return;
+        }
+        let Some(key) = analysis::sort_key(name.as_str()) else {
             return;
         };
         let Some((path, range)) = crate::source::locate(cx, expansion.call_site) else {
@@ -77,6 +84,10 @@ impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
             return;
         };
         let Some(local) = adt.did().as_local() else { return };
+        // Ignore Serde's generated helper types; lint levels belong to the user's type.
+        if cx.tcx.def_span(local).from_expansion() {
+            return;
+        }
         let id = cx.tcx.local_def_id_to_hir_id(local);
         self.files
             .entry((
@@ -90,11 +101,11 @@ impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
             .derives
             .entry((range.start().into(), range.end().into()))
             .and_modify(|(existing, _)| {
-                if *existing != Some(rank) {
+                if *existing != Some(key) {
                     *existing = None;
                 }
             })
-            .or_insert((Some(rank), id));
+            .or_insert((Some(key), id));
     }
 
     fn check_crate_post(&mut self, cx: &LateContext<'tcx>) {
@@ -110,7 +121,7 @@ impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
                 facts
                     .derives
                     .get(&(range.start().into(), range.end().into()))
-                    .and_then(|(rank, _)| *rank)
+                    .and_then(|(key, _)| *key)
             });
             for issue in output.issues {
                 let diagnostic = &issue.diagnostics[0];

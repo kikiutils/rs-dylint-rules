@@ -87,14 +87,14 @@ fn honors_lint_levels_and_inactive_items() -> Result<()> {
 }
 
 #[test]
-fn custom_macro_named_like_builtin_does_not_enable_sorting_its_list() -> Result<()> {
-    let source = "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Hash, Eq, PartialEq)]\npub struct Plain;\n";
+fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists() -> Result<()> {
+    let source = "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Hash, Eq, PartialEq)]\npub struct Plain;\n";
     let directory = fixture(source)?;
     let root = path!(directory.path());
     (&root / "custom" / "src").create_dir_all_sync()?;
     (&root / "custom" / "Cargo.toml")
         .write_sync("[package]\nname=\"custom\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[lib]\nproc-macro=true\n")?;
-    (&root / "custom" / "src" / "lib.rs").write_sync("extern crate proc_macro;\n#[proc_macro_derive(Clone)] pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n")?;
+    (&root / "custom" / "src" / "lib.rs").write_sync("extern crate proc_macro;\n#[proc_macro_derive(Clone)] pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(Serialize)] pub fn serialize(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n")?;
     let manifest = &root / "Cargo.toml";
     let text = manifest.read_to_string_sync()?;
     manifest.write_sync(format!("{text}\n[dependencies]\ncustom={{path=\"custom\"}}\n"))?;
@@ -102,7 +102,7 @@ fn custom_macro_named_like_builtin_does_not_enable_sorting_its_list() -> Result<
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         (&root / "src" / "lib.rs").read_to_string_sync()?,
-        "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(PartialEq, Eq, Hash)]\npub struct Plain;\n"
+        "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(PartialEq, Eq, Hash)]\npub struct Plain;\n"
     );
     Ok(())
 }
@@ -139,5 +139,81 @@ fn shared_source_module_instances_keep_their_own_lint_levels() -> Result<()> {
     let output = run(&directory, false)?;
     assert!(!output.status.success());
     assert!(has_lint(&output), "{output:?}");
+    Ok(())
+}
+
+#[test]
+fn serde_aliases_and_qualified_paths_sort_and_preserve_roundtrip_behavior() -> Result<()> {
+    let source = r##"use serde as renamed;
+use renamed::{Deserialize as Decode, Serialize as Encode};
+#[derive(Decode, Eq, Encode, Debug, PartialEq)]
+pub struct Value { pub number: u32 }
+#[derive(renamed::Deserialize, renamed::Serialize)]
+pub enum State { Ready, Value(u32) }
+#[test] fn roundtrip() {
+    let value = Value { number: 7 };
+    let json = serde_json::to_string(&value).unwrap();
+    assert_eq!(json, r#"{"number":7}"#);
+    assert_eq!(serde_json::from_str::<Value>(&json).unwrap(), value);
+    let state = serde_json::to_string(&State::Value(9)).unwrap();
+    assert_eq!(serde_json::to_string(&serde_json::from_str::<State>(&state).unwrap()).unwrap(), state);
+}
+"##;
+    let directory = fixture(source)?;
+    let manifest = path!(directory.path()) / "Cargo.toml";
+    let text = manifest.read_to_string_sync()?;
+    manifest.write_sync(format!(
+        "{text}\n[dependencies]\nserde={{version=\"=1.0.229\", features=[\"derive\"]}}\nserde_json=\"=1.0.154\"\n"
+    ))?;
+    let file = path!(directory.path()) / "src" / "lib.rs";
+    for fix in [false, true] {
+        let output = run(&directory, fix)?;
+        assert!(output.status.success(), "{output:?}");
+        if !fix {
+            assert!(has_lint(&output), "{output:?}");
+        }
+        let behavior = Command::new("cargo")
+            .current_dir(directory.path())
+            .args(["+nightly-2026-10-01", "test", "--lib", "--quiet"])
+            .output()?;
+        assert!(behavior.status.success(), "{behavior:?}");
+    }
+    assert_eq!(
+        file.read_to_string_sync()?,
+        source
+            .replace(
+                "Decode, Eq, Encode, Debug, PartialEq",
+                "Debug, PartialEq, Eq, Encode, Decode"
+            )
+            .replace(
+                "renamed::Deserialize, renamed::Serialize",
+                "renamed::Serialize, renamed::Deserialize"
+            )
+    );
+    let output = run(&directory, false)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!has_lint(&output), "{output:?}");
+    Ok(())
+}
+
+#[test]
+fn renamed_serde_dependency_with_helper_attributes_is_diagnostic_only() -> Result<()> {
+    let source = r#"#[derive(renamed::Deserialize, renamed::Serialize)]
+#[serde(crate = "renamed", rename_all = "camelCase")]
+pub struct Value { pub some_field: u32 }
+"#;
+    let directory = fixture(source)?;
+    let manifest = path!(directory.path()) / "Cargo.toml";
+    let text = manifest.read_to_string_sync()?;
+    manifest.write_sync(format!(
+        "{text}\n[dependencies]\nrenamed={{package=\"serde\", version=\"=1.0.229\", features=[\"derive\"]}}\n"
+    ))?;
+    let output = run(&directory, true)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(has_lint(&output), "{output:?}");
+    assert_eq!(
+        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
+        source
+    );
     Ok(())
 }
