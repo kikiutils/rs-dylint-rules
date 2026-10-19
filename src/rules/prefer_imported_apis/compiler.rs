@@ -15,7 +15,6 @@ use rustc_hir::{
 use rustc_lint::{
     LateContext,
     LateLintPass,
-    LintContext,
 };
 use rustc_lint_defs::{
     declare_lint,
@@ -247,12 +246,8 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
             if !self.sources.contains(path, key.1) {
                 continue;
             }
-            let source = match crate::source::Source::load(cx, path, facts.anchor) {
-                Ok(source) => source,
-                Err(error) => {
-                    cx.sess().dcx().span_err(facts.anchor, format!("{error:#}"));
-                    continue;
-                },
+            let Some(source) = crate::source::Source::load(cx, path, facts.anchor) else {
+                continue;
             };
             let output = analysis::analyze(
                 source.parsed.syntax(),

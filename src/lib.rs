@@ -11,6 +11,8 @@ mod diagnostic;
 mod rules;
 mod source;
 mod syntax;
+#[cfg(test)]
+mod test_support;
 
 // Match the compiler ABI; Dylint supplies and owns the actual driver.
 dylint_linting::dylint_library!();

@@ -14,6 +14,7 @@
 | `src/source.rs` | 記錄 module 來源與共用檔案實例，驗證來源、解析原文 CST，轉換 rustc spans 與磁碟原文位元組偏移。路徑與檔案讀取統一使用 pathkit。 |
 | `src/diagnostic.rs` | 定義規則內部的診斷與修正資料，統一發出原生 lint 診斷。 |
 | `src/syntax.rs` | 共用 attributes、條件邊界與註解判斷；規則各自保留搬移、拆分與 derive helpers 的額外限制。 |
+| `src/test_support.rs` | 僅於單元測試載入的共用 helper，不參與正式 lint 執行。 |
 | `tests/` | 驗證實際 Dylint 診斷、lint 層級及 `--fix` 行為。 |
 
 ## 規則註冊

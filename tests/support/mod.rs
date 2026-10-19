@@ -19,15 +19,26 @@ pub(crate) fn fixture(source: &str) -> Result<TempDir> {
     Ok(directory)
 }
 
-pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> Result<Output> {
+pub(crate) fn cargo(directory: &TempDir) -> Command {
     let mut command = Command::new("cargo");
+    // Fixtures live outside the repository; inherit its toolchain explicitly.
+    command
+        .current_dir(directory.path())
+        .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"));
+    command
+}
+
+pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> Result<Output> {
+    let mut command = cargo(directory);
     let flags = format!(
         "-A unused -A kiki_import_module_order -A kiki_import_path_prefix -A kiki_grouped_derive_order -A kiki_prefer_imported_apis -W {lint}"
     );
-    command
-        .current_dir(directory.path())
-        .env("DYLINT_RUSTFLAGS", flags)
-        .args(["dylint", "--path", env!("CARGO_MANIFEST_DIR"), "--fail-on-no-libraries"]);
+    command.env("DYLINT_RUSTFLAGS", flags).args([
+        "dylint",
+        "--path",
+        env!("CARGO_MANIFEST_DIR"),
+        "--fail-on-no-libraries",
+    ]);
     if fix {
         command.arg("--fix");
     }
@@ -35,8 +46,6 @@ pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> Result<Output> 
     if fix {
         command.args(["--allow-no-vcs", "--allow-dirty"]);
     }
-    // Fixtures live outside the repository, so rustup needs the toolchain explicitly.
-    command.env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"));
     Ok(command.output()?)
 }
 

@@ -1,7 +1,4 @@
-use std::process::{
-    Command,
-    Output,
-};
+use std::process::Output;
 
 use anyhow::Result;
 use pathkit::{
@@ -62,11 +59,7 @@ pub fn run(valid: bool) -> anyhow::Result<()> {
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(diagnostics(&output).is_empty(), "{output:?}");
-    let output = Command::new("cargo")
-        .current_dir(directory.path())
-        .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
-        .args(["test", "--lib", "--quiet"])
-        .output()?;
+    let output = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
     assert!(output.status.success(), "{output:?}");
     Ok(())
 }
@@ -139,11 +132,7 @@ mod conflict {
     (path!(directory.path()) / "src" / "lib.rs").write_sync(format!(
         "{fixed}\n#[test] fn behavior() {{ assert!(inherited::run().is_err()); }}\n"
     ))?;
-    let output = Command::new("cargo")
-        .current_dir(directory.path())
-        .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
-        .args(["test", "--lib", "--quiet"])
-        .output()?;
+    let output = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
     assert!(output.status.success(), "{output:?}");
     Ok(())
 }
@@ -427,9 +416,7 @@ mod conditional {
         Some(1),
         "{fixed}"
     );
-    let output = std::process::Command::new("cargo")
-        .current_dir(directory.path())
-        .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
+    let output = support::cargo(&directory)
         .args(["check", "--no-default-features", "--quiet"])
         .output()?;
     assert!(output.status.success(), "{output:?}");

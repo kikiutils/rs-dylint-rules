@@ -140,16 +140,11 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
                 };
                 let Some(scope) = scope(tree.syntax()) else { continue };
                 let renamed = tree.rename().is_some();
-                let allowed = if fact.api == Api::Crate {
-                    !renamed
-                } else {
-                    fact.api.allows(name)
-                        && (!renamed
-                            || match fact.api {
-                                Api::Result => name == "AnyhowResult",
-                                Api::Error => name == "AnyhowError",
-                                _ => false,
-                            })
+                let allowed = match fact.api {
+                    Api::Crate => !renamed,
+                    Api::Result => fact.api.allows(name) && (!renamed || name == "AnyhowResult"),
+                    Api::Error => name == "AnyhowError",
+                    _ => fact.api.allows(name) && !renamed,
                 };
                 if allowed {
                     imports.push(Import {

@@ -17,7 +17,7 @@ fn check(source: &str) -> RuleOutput {
 }
 
 fn apply(source: &str, output: &RuleOutput) -> String {
-    crate::diagnostic::apply_edits(
+    crate::test_support::apply_edits(
         source,
         output
             .issues

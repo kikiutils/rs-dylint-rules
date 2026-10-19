@@ -1,7 +1,4 @@
-use std::process::{
-    Command,
-    Output,
-};
+use std::process::Output;
 
 use anyhow::Result;
 use pathkit::{
@@ -88,11 +85,7 @@ fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> Result<()> 
     for fix in [false, true] {
         let output = run(&directory, fix)?;
         assert!(output.status.success(), "{output:?}");
-        let behavior = Command::new("cargo")
-            .current_dir(directory.path())
-            .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
-            .args(["test", "--lib", "--quiet"])
-            .output()?;
+        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }
     assert_eq!(
@@ -149,11 +142,7 @@ pub enum State { Ready, Value(u32) }
         if !fix {
             assert!(has_lint(&output), "{output:?}");
         }
-        let behavior = Command::new("cargo")
-            .current_dir(directory.path())
-            .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
-            .args(["test", "--lib", "--quiet"])
-            .output()?;
+        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }
     assert_eq!(
@@ -213,11 +202,7 @@ pub enum State { Ready, Done }
         if !fix {
             assert!(has_lint(&output), "{output:?}");
         }
-        let behavior = Command::new("cargo")
-            .current_dir(directory.path())
-            .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
-            .args(["test", "--lib", "--quiet"])
-            .output()?;
+        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }
     assert_eq!(

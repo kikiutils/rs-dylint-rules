@@ -43,7 +43,7 @@ impl From<RuleOutput> for Analysis {
 
 impl Analysis {
     fn apply(&self, source: &str) -> String {
-        crate::diagnostic::apply_edits(source, self.edits.iter())
+        crate::test_support::apply_edits(source, self.edits.iter())
     }
 }
 

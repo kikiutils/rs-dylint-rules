@@ -52,7 +52,17 @@ pub(crate) fn locate(cx: &LateContext<'_>, span: Span) -> Option<(Path, TextRang
 }
 
 impl Source {
-    pub(crate) fn load(cx: &LateContext<'_>, path: &Path, anchor: Span) -> Result<Self> {
+    pub(crate) fn load(cx: &LateContext<'_>, path: &Path, anchor: Span) -> Option<Self> {
+        match Self::read(cx, path, anchor) {
+            Ok(source) => Some(source),
+            Err(error) => {
+                cx.sess().dcx().span_err(anchor, format!("{error:#}"));
+                None
+            },
+        }
+    }
+
+    fn read(cx: &LateContext<'_>, path: &Path, anchor: Span) -> Result<Self> {
         let text = path
             .read_to_string_sync()
             .with_context(|| format!("Failed to read {path}"))?;
