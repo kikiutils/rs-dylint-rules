@@ -62,10 +62,22 @@ impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
         };
         let name = cx.tcx.item_name(definition);
         let builtin = cx.tcx.is_builtin_derived(item.owner_id.to_def_id());
-        let serde = cx.tcx.crate_name(definition.krate).as_str() == "serde_derive"
-            && matches!(name.as_str(), "Serialize" | "Deserialize")
-            && cx.tcx.is_automatically_derived(item.owner_id.to_def_id());
-        if !builtin && !serde {
+        let supported = match cx.tcx.crate_name(definition.krate).as_str() {
+            "serde_derive" => {
+                matches!(name.as_str(), "Serialize" | "Deserialize")
+                    && cx.tcx.is_automatically_derived(item.owner_id.to_def_id())
+            },
+            "is_empty_derive" => {
+                name.as_str() == "IsEmpty" && cx.tcx.is_automatically_derived(item.owner_id.to_def_id())
+            },
+            "strum_macros" => {
+                matches!(name.as_str(), "EnumIs" | "EnumCount" | "VariantNames" | "VariantArray")
+                    && cx.tcx.is_automatically_derived(item.owner_id.to_def_id())
+            },
+            "serde_repr" => matches!(name.as_str(), "Serialize_repr" | "Deserialize_repr"),
+            _ => false,
+        };
+        if !builtin && !supported {
             return;
         }
         let Some(key) = analysis::sort_key(name.as_str()) else {
@@ -84,7 +96,7 @@ impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
             return;
         };
         let Some(local) = adt.did().as_local() else { return };
-        // Ignore Serde's generated helper types; lint levels belong to the user's type.
+        // Ignore generated helper types; lint levels belong to the user's type.
         if cx.tcx.def_span(local).from_expansion() {
             return;
         }

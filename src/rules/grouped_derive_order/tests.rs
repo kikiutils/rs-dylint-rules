@@ -104,3 +104,27 @@ fn serialization_group_follows_builtins_and_keeps_its_own_fixed_order() {
         "#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]\nstruct Value;\n"
     );
 }
+
+#[test]
+fn integer_repr_allows_fix_but_other_attributes_still_protect_the_item() {
+    let source = "#[derive(Deserialize_repr, Serialize_repr, Debug)]\n#[repr(u8)]\nenum Value { A }\n";
+    let output = check(source);
+    assert_eq!(
+        apply(source, &output),
+        source.replace(
+            "Deserialize_repr, Serialize_repr, Debug",
+            "Debug, Serialize_repr, Deserialize_repr"
+        )
+    );
+    for attribute in [
+        "#[observe]",
+        "#[repr(C, u8)]",
+        "#[repr(/* note */ u8)]",
+        "#[serde(other)]",
+    ] {
+        let protected = format!("{attribute}\n{source}");
+        let output = check(&protected);
+        assert_eq!(output.issues.len(), 1);
+        assert_eq!(apply(&protected, &output), protected);
+    }
+}

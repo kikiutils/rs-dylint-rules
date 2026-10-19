@@ -19,7 +19,9 @@ pub(super) const GROUPS: &[&[&str]] = &[
     &["Clone", "Copy"],
     &["Default"],
     &["PartialEq", "Eq", "PartialOrd", "Ord", "Hash"],
-    &["Serialize", "Deserialize"],
+    &["Serialize", "Serialize_repr", "Deserialize", "Deserialize_repr"],
+    &["IsEmpty", "EnumIs"],
+    &["EnumCount", "VariantNames", "VariantArray"],
 ];
 
 // Group order first, then the fixed position within that group.
@@ -101,7 +103,7 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
             ancestor
                 .children()
                 .filter_map(ast::Attr::cast)
-                .any(|other| derive_meta(&other).is_none())
+                .any(|other| derive_meta(&other).is_none() && !integer_repr(&other))
         });
         let comments = tree
             .syntax()
@@ -152,4 +154,24 @@ fn derive_meta(attribute: &ast::Attr) -> Option<ast::TokenTreeMeta> {
         "derive" | "core::derive" | "std::derive" | "::core::derive" | "::std::derive"
     )
     .then_some(meta)
+}
+
+// An integer repr changes layout, not the order-dependent macro input policy.
+fn integer_repr(attribute: &ast::Attr) -> bool {
+    let Some(ast::Meta::TokenTreeMeta(meta)) = attribute.meta() else {
+        return false;
+    };
+    let Some(path) = meta.path() else { return false };
+    if path.syntax().text() != "repr" {
+        return false;
+    }
+    let Some(tree) = meta.token_tree() else { return false };
+    let text = tree.syntax().text().to_string();
+    let Some(inner) = text.strip_prefix('(').and_then(|text| text.strip_suffix(')')) else {
+        return false;
+    };
+    matches!(
+        inner.trim(),
+        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+    )
 }

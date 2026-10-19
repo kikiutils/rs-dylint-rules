@@ -88,13 +88,13 @@ fn honors_lint_levels_and_inactive_items() -> Result<()> {
 
 #[test]
 fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists() -> Result<()> {
-    let source = "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Hash, Eq, PartialEq)]\npub struct Plain;\n";
+    let source = "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Eq, custom::IsEmpty, PartialEq)]\npub struct ProtectedEmpty;\n#[derive(Eq, custom::Serialize_repr, PartialEq)]\npub struct ProtectedRepr;\n#[derive(Eq, custom::EnumCount, PartialEq)]\npub struct ProtectedStrum;\n#[derive(Hash, Eq, PartialEq)]\npub struct Plain;\n";
     let directory = fixture(source)?;
     let root = path!(directory.path());
     (&root / "custom" / "src").create_dir_all_sync()?;
     (&root / "custom" / "Cargo.toml")
         .write_sync("[package]\nname=\"custom\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[lib]\nproc-macro=true\n")?;
-    (&root / "custom" / "src" / "lib.rs").write_sync("extern crate proc_macro;\n#[proc_macro_derive(Clone)] pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(Serialize)] pub fn serialize(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n")?;
+    (&root / "custom" / "src" / "lib.rs").write_sync("extern crate proc_macro;\n#[proc_macro_derive(Clone)] pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(Serialize)] pub fn serialize(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(IsEmpty)] pub fn empty(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(Serialize_repr)] pub fn repr(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(EnumCount)] pub fn count(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n")?;
     let manifest = &root / "Cargo.toml";
     let text = manifest.read_to_string_sync()?;
     manifest.write_sync(format!("{text}\n[dependencies]\ncustom={{path=\"custom\"}}\n"))?;
@@ -102,7 +102,7 @@ fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists(
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         (&root / "src" / "lib.rs").read_to_string_sync()?,
-        "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(PartialEq, Eq, Hash)]\npub struct Plain;\n"
+        "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Eq, custom::IsEmpty, PartialEq)]\npub struct ProtectedEmpty;\n#[derive(Eq, custom::Serialize_repr, PartialEq)]\npub struct ProtectedRepr;\n#[derive(Eq, custom::EnumCount, PartialEq)]\npub struct ProtectedStrum;\n#[derive(PartialEq, Eq, Hash)]\npub struct Plain;\n"
     );
     Ok(())
 }
@@ -215,5 +215,66 @@ pub struct Value { pub some_field: u32 }
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         source
     );
+    Ok(())
+}
+
+#[test]
+fn supported_third_party_derives_preserve_behavior() -> Result<()> {
+    let source = r#"use is_empty::IsEmpty as Empty;
+use serde_repr::{Deserialize_repr as Decode, Serialize_repr as Encode};
+use strum::{EnumCount as Count, VariantNames as Names};
+#[derive(Empty, Default, Debug)]
+pub struct Record {
+    value: Option<u8>,
+    #[is_empty(if = "Vec::is_empty")]
+    extra: Vec<u8>,
+}
+#[derive(Decode, Encode, Debug, PartialEq)]
+#[repr(u8)]
+pub enum Number { One = 1, Two = 2 }
+#[derive(strum::VariantArray, Names, Count, strum::EnumIs, Debug, PartialEq)]
+pub enum State { Ready, Done }
+#[test] fn behavior() {
+    use is_empty::IsEmpty;
+    assert!(Record::default().is_empty());
+    assert!(!Record { value: Some(1), extra: vec![] }.is_empty());
+    assert_eq!(serde_json::to_string(&Number::Two).unwrap(), "2");
+    assert_eq!(serde_json::from_str::<Number>("1").unwrap(), Number::One);
+    assert_eq!(<State as strum::EnumCount>::COUNT, 2);
+    assert_eq!(<State as strum::VariantNames>::VARIANTS, &["Ready", "Done"]);
+    assert_eq!(<State as strum::VariantArray>::VARIANTS, &[State::Ready, State::Done]);
+    assert!(State::Ready.is_ready());
+    assert!(!State::Done.is_ready());
+}
+"#;
+    let directory = fixture(source)?;
+    let manifest = path!(directory.path()) / "Cargo.toml";
+    let text = manifest.read_to_string_sync()?;
+    manifest.write_sync(format!("{text}\n[dependencies]\nis_empty=\"=0.3.0\"\nserde=\"=1.0.229\"\nserde_repr=\"=0.1.21\"\nserde_json=\"=1.0.154\"\nstrum={{version=\"=0.28.0\",default-features=false,features=[\"derive\"]}}\n"))?;
+    for fix in [false, true] {
+        let output = run(&directory, fix)?;
+        assert!(output.status.success(), "{output:?}");
+        if !fix {
+            assert!(has_lint(&output), "{output:?}");
+        }
+        let behavior = Command::new("cargo")
+            .current_dir(directory.path())
+            .args(["+nightly-2026-10-01", "test", "--lib", "--quiet"])
+            .output()?;
+        assert!(behavior.status.success(), "{behavior:?}");
+    }
+    assert_eq!(
+        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
+        source
+            .replace("Empty, Default, Debug", "Debug, Default, Empty")
+            .replace("Decode, Encode, Debug, PartialEq", "Debug, PartialEq, Encode, Decode")
+            .replace(
+                "strum::VariantArray, Names, Count, strum::EnumIs, Debug, PartialEq",
+                "Debug, PartialEq, strum::EnumIs, Count, Names, strum::VariantArray"
+            )
+    );
+    let output = run(&directory, false)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!has_lint(&output), "{output:?}");
     Ok(())
 }

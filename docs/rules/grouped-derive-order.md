@@ -6,7 +6,7 @@
 
 ## 適用範圍
 
-- 檢查對象為 struct、enum 與 union 定義上的原始 derive 列表；僅處理 rustc 確認為支援之內建或 Serde derive 的項目，不以名稱猜測巨集來源。
+- 檢查對象為 struct、enum 與 union 定義上的原始 derive 列表；僅處理 rustc 確認為支援之內建或第三方 derive 的項目，不以名稱猜測巨集來源。
 - 檢查 Cargo／rustc 在當次 target、features 與 cfg 下實際載入、canonicalize 後位於 compiler 工作目錄內的實體來源，包含各層 module 與函式等區塊內的局部定義。
 - 支援直接書寫的 `#[derive(...)]`、`#[core::derive(...)]` 與 `#[std::derive(...)]`，包含後兩者的絕對路徑寫法；列表內的限定路徑與支援之 derive aliases 依實際解析結果辨識。
 - 每個 derive attribute 獨立處理；不檢查其他 attributes 的整體排列，不跨列表要求全域順序。
@@ -22,13 +22,16 @@
 | 2 | 複製 | `Clone` → `Copy` |
 | 3 | 預設值 | `Default` |
 | 4 | 相等、比較與雜湊 | `PartialEq` → `Eq` → `PartialOrd` → `Ord` → `Hash` |
-| 5 | Serde 序列化 | `Serialize` → `Deserialize` |
+| 5 | Serde 序列化 | `Serialize` → `Serialize_repr` → `Deserialize` → `Deserialize_repr` |
+| 6 | 狀態查詢 | `IsEmpty` → `EnumIs` |
+| 7 | 列舉資訊 | `EnumCount` → `VariantNames` → `VariantArray` |
 
-- 分組與排序根據 rustc 確認的巨集來源，不只比較最後一段名稱。內建 derive 須由 compiler 確認；Serde derive 須解析至 `serde_derive` crate 的 `Serialize` 或 `Deserialize`，可經由 `serde` re-export、限定路徑或 alias 使用。其他 crate 的同名巨集不列入支援清單。
+- 分組與排序根據 rustc 確認的巨集來源，不只比較最後一段名稱。內建 derive 須由 compiler 確認；Serde derive 須解析至 `serde_derive` crate 的 `Serialize` 或 `Deserialize`，可經由 `serde` re-export、限定路徑或 alias 使用。`IsEmpty` 須來自 `is_empty_derive`；`Serialize_repr`／`Deserialize_repr` 須來自 `serde_repr`；上述 Strum derives 須來自 `strum_macros`，支援經由 `strum` re-export。其他 crate 的同名巨集不列入支援清單。
 - 每個 `#[derive(...)]` 只整理自己的列表，不合併、拆分、交換 attributes，也不在列表之間搬動 derive。
 - 列表含有任何未知或未支援的 derive 時，整個列表略過，不提供排序診斷或修正，也不要求未知項目移至最後或按字典排序。
 - 某個列表被略過，不阻擋同一 item 上其他純已知列表獨立檢查。
-- 目前支援上述九種 Rust 內建 derive，以及 Serde 的 `Serialize`／`Deserialize`；已查核並測試 Serde `1.0.229`，實作依巨集來源辨識，不限制使用端版本。其他版本若改變展開結構，可能無法辨識，須重新驗證。strum 與其他未列入清單的巨集仍略過，不能僅因 crate 知名就加入。
+- 已查核版本：Serde `1.0.229`、is_empty `0.3.0`（is_empty_derive `0.1.0`）、serde_repr `0.1.21`、strum／strum_macros `0.28.0`。實作依巨集來源辨識，不限制使用端版本；其他版本若改變展開結構，須重新驗證。
+- `Serialize_repr`／`Deserialize_repr` 分別是一般 Serde derives 的替代方案，不應與實作相同 trait 的一般 derive 重複使用。Strum 僅支援表內四種 derives，其餘仍按未知列表處理。
 - 不新增、移除或去重 derive，不改寫限定路徑、aliases、型別內容、helper attributes 或其他 attributes。重複 derive 與缺少 trait 相依的錯誤仍由 rustc 或其他 lint 處理。
 
 ## 正確範例
@@ -101,7 +104,7 @@ struct Value(u32);
 
 - 無法確認所有項目均為支援之 derive 時，略過該列表，不猜測巨集來源，也不排序剩餘的已知子區段。
 - 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
-- 定義或其外層帶有非 derive 的 attributes 時，採保守策略：可辨識的純已知列表仍提供診斷，但不自動修正，避免外層 attribute macro 觀察到不同 tokens。此限制也包含 `#[serde(...)]` helper attributes；本次不擴大既有 attribute 修正白名單。
+- 定義或其外層帶有非 derive、非單一整數 `#[repr(...)]` 的 attributes 時，採保守策略：可辨識的純已知列表仍提供診斷，但不自動修正，避免外層 attribute macro 觀察到不同 tokens。此限制也包含 `#[serde(...)]` helper attributes；僅放行單一整數 repr（如 `#[repr(u8)]`），複合 repr、含註解的 repr 與其他 attributes 仍不放行。
 - 無法編譯或無法可靠對應原文與 compiler expansion 的程式碼，不保證能產生本規則的診斷。
 
 ## Auto-fix
@@ -120,9 +123,13 @@ Rust 允許同一 item 有多個 derive attributes；[Reference](https://doc.rus
 
 Serde `1.0.229` 的 [Serialize 產生器](https://docs.rs/crate/serde_derive/1.0.229/source/src/ser.rs) 與 [Deserialize 產生器](https://docs.rs/crate/serde_derive/1.0.229/source/src/de.rs) 分別產生各自的實作；[容器 attributes 解析](https://docs.rs/crate/serde_derive/1.0.229/source/src/internals/attr.rs) 不以 derive 列表順序決定序列化設定。已驗證混合內建與 Serde、巨集 aliases、限定路徑，以及修正前後的 struct／enum JSON 往返；不因此宣稱所有第三方 derive 都可重排。
 
+is_empty_derive `0.1.0` 的 [產生器](https://docs.rs/crate/is_empty_derive/0.1.0/source/src/is_empty.rs) 依欄位產生 `IsEmpty` impl；serde_repr `0.1.21` 的 [產生器](https://docs.rs/crate/serde_repr/0.1.21/source/src/lib.rs) 依整數 repr 分別產生序列化與反序列化 impl。Strum `0.28.0` 本次支援的 [四種產生器](https://docs.rs/crate/strum_macros/0.28.0/source/src/macros/) 均直接為原 enum 產生 impl，不依 derive 列表順序決定內容；其他涉及轉換目標或額外型別的 derives 暫不納入。
+
 ### 完成進度
 
 - [x] 純內建 derive 的功能分組與固定順序。
 - [x] 各 attribute 獨立處理、未知列表略過、alias 來源辨識與安全修正邊界。
 - [x] 加入 Serde `Serialize`／`Deserialize`，驗證來源、aliases、helper attribute 邊界及序列化往返。
-- [ ] 經查核後逐項擴充其他第三方 derive，目前不包含 strum。
+- [x] 加入 is_empty `IsEmpty`、serde_repr derives 與單一整數 repr 修正白名單。
+- [x] 加入 Strum `EnumIs`、`EnumCount`、`VariantNames`、`VariantArray`。
+- [ ] 經查核後逐項擴充其餘第三方 derives。
