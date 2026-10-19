@@ -42,6 +42,7 @@ rustflags = [
 
 # Dev-safe target-wide examples only. Release-only target flags belong in scripts.
 [target.x86_64-unknown-linux-gnu]
+linker = "dylint-link"
 rustflags = [
   "-C", "link-arg=-fuse-ld=mold",
 ]
