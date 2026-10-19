@@ -31,7 +31,7 @@ pub(crate) fn cargo(directory: &TempDir) -> Command {
 pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> Result<Output> {
     let mut command = cargo(directory);
     let flags = format!(
-        "-A unused -A kiki_import_module_order -A kiki_import_path_prefix -A kiki_grouped_derive_order -A kiki_prefer_imported_apis -W {lint}"
+        "-A unused -A kiki_import_module_order -A kiki_import_path_prefix -A kiki_grouped_derive_order -A kiki_prefer_imported_apis -A kiki_statement_padding -W {lint}"
     );
     command.env("DYLINT_RUSTFLAGS", flags).args([
         "dylint",

@@ -125,6 +125,10 @@ impl ModuleSources {
         self.modules.contains(&(path.clone(), module))
     }
 
+    pub(crate) fn contains_path(&self, path: &Path) -> bool {
+        self.modules.iter().any(|(owned, _)| owned == path)
+    }
+
     pub(crate) fn can_fix(&self, path: &Path) -> bool {
         !self.shared.contains(path)
     }

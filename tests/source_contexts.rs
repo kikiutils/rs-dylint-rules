@@ -37,6 +37,7 @@ let _ = anyhow::anyhow!("fragment"); 0 }
         "kiki_import_path_prefix",
         "kiki_grouped_derive_order",
         "kiki_prefer_imported_apis",
+        "kiki_statement_padding",
     ] {
         let output = support::run(&directory, true, lint)?;
         assert!(output.status.success(), "{lint}: {output:?}");
