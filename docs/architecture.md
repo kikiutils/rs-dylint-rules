@@ -2,7 +2,7 @@
 
 ## 專案定位
 
-`kiki-rs-dylint-rules` 是單一 Dylint 動態規則庫，產物為 `cdylib`，不提供獨立執行檔或自訂 compiler driver。目前只實作 `import_module_order`；檢查與自動修正直接使用 `cargo dylint`／`cargo dylint --fix`。
+`kiki-rs-dylint-rules` 是單一 Dylint 動態規則庫，產物為 `cdylib`，不提供獨立執行檔或自訂 compiler driver。檢查與自動修正直接使用 `cargo dylint`／`cargo dylint --fix`。
 
 ## 模組分工
 

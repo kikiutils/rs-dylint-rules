@@ -1,0 +1,146 @@
+use std::collections::BTreeMap;
+
+use pathkit::Path;
+use ra_ap_syntax::{
+    AstNode,
+    TextRange,
+};
+use rustc_errors::{
+    Applicability,
+    DiagDecorator,
+};
+use rustc_hir as hir;
+use rustc_lint::{
+    LateContext,
+    LateLintPass,
+    LintContext,
+};
+use rustc_lint_defs::{
+    declare_lint,
+    impl_lint_pass,
+};
+use rustc_span::{
+    Span,
+    hygiene::{
+        ExpnKind,
+        MacroKind,
+    },
+};
+
+use super::analysis;
+
+declare_lint! { pub KIKI_GROUPED_DERIVE_ORDER, Warn, "group known built-in derives in a consistent order" }
+
+pub(super) fn register(store: &mut rustc_lint::LintStore) {
+    store.register_lints(&[KIKI_GROUPED_DERIVE_ORDER]);
+    store.register_late_lint_pass(Box::new(|_| Box::<GroupedDeriveOrder>::default()));
+}
+
+#[derive(Default)]
+struct GroupedDeriveOrder {
+    files: BTreeMap<(Path, u32), FileFacts>,
+}
+
+struct FileFacts {
+    anchor: Span,
+    derives: BTreeMap<(u32, u32), (Option<usize>, hir::HirId)>,
+}
+
+impl_lint_pass!(GroupedDeriveOrder => [KIKI_GROUPED_DERIVE_ORDER]);
+
+impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
+    fn check_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx hir::Item<'tcx>) {
+        if !matches!(item.kind, hir::ItemKind::Impl(_)) || !cx.tcx.is_builtin_derived(item.owner_id.to_def_id()) {
+            return;
+        }
+        let expansion = item.span.ctxt().outer_expn_data();
+        if !matches!(expansion.kind, ExpnKind::Macro(MacroKind::Derive, _)) || expansion.call_site.from_expansion() {
+            return;
+        }
+        let Some(definition) = expansion.macro_def_id else {
+            return;
+        };
+        let name = cx.tcx.item_name(definition);
+        let Some(rank) = analysis::ORDER.iter().position(|known| *known == name.as_str()) else {
+            return;
+        };
+        let Some((path, range)) = crate::source::locate(cx, expansion.call_site) else {
+            return;
+        };
+        let Some(adt) = cx
+            .tcx
+            .type_of(item.owner_id)
+            .instantiate_identity()
+            .skip_norm_wip()
+            .ty_adt_def()
+        else {
+            return;
+        };
+        let Some(local) = adt.did().as_local() else { return };
+        let id = cx.tcx.local_def_id_to_hir_id(local);
+        self.files
+            .entry((
+                path,
+                cx.tcx.parent_module(id).to_local_def_id().local_def_index.as_u32(),
+            ))
+            .or_insert_with(|| FileFacts {
+                anchor: expansion.call_site,
+                derives: BTreeMap::new(),
+            })
+            .derives
+            .entry((range.start().into(), range.end().into()))
+            .and_modify(|(existing, _)| {
+                if *existing != Some(rank) {
+                    *existing = None;
+                }
+            })
+            .or_insert((Some(rank), id));
+    }
+
+    fn check_crate_post(&mut self, cx: &LateContext<'tcx>) {
+        for ((path, _), facts) in &self.files {
+            let source = match crate::source::Source::load(cx, path, facts.anchor) {
+                Ok(source) => source,
+                Err(error) => {
+                    cx.sess().dcx().span_err(facts.anchor, format!("{error:#}"));
+                    continue;
+                },
+            };
+            let output = analysis::analyze(source.parsed.syntax(), |range| {
+                facts
+                    .derives
+                    .get(&(range.start().into(), range.end().into()))
+                    .and_then(|(rank, _)| *rank)
+            });
+            for issue in output.issues {
+                let diagnostic = &issue.diagnostics[0];
+                let Some(id) = facts.derives.iter().find_map(|(&(start, end), (_, id))| {
+                    diagnostic
+                        .range
+                        .contains_range(TextRange::new(start.into(), end.into()))
+                        .then_some(*id)
+                }) else {
+                    continue;
+                };
+                cx.tcx.emit_node_span_lint(
+                    KIKI_GROUPED_DERIVE_ORDER,
+                    id,
+                    source.span(diagnostic.range),
+                    DiagDecorator(|diag| {
+                        diag.primary_message(diagnostic.message.clone());
+                        if let Some(fix) = issue.fix {
+                            diag.multipart_suggestion(
+                                "reorder this derive list",
+                                fix.edits
+                                    .into_iter()
+                                    .map(|edit| (source.span(edit.range), edit.replacement))
+                                    .collect(),
+                                Applicability::MachineApplicable,
+                            );
+                        }
+                    }),
+                );
+            }
+        }
+    }
+}
