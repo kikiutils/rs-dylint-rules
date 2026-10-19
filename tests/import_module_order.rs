@@ -132,3 +132,20 @@ fn fixes_nested_scopes_and_ignores_inactive_code() -> Result<()> {
     assert!(fixed.contains("#[cfg(any())] mod missing;"));
     Ok(())
 }
+
+#[test]
+fn visible_imports_are_resolved_reordered_and_keep_their_visibility() -> Result<()> {
+    let source = "pub use crate::child::Value as PublicValue;\npub(crate) use crate::child::Value as CrateValue;\npub(self) use crate::child::Value as PrivateValue;\nmod child;\npub use std::fmt::Debug;\npub(crate) use std::fmt::Display;\nmod nested {\n    pub(super) use crate::child::Value as ParentValue;\n    pub(in crate::nested) use crate::child::Value as NestedValue;\n    pub use std::fmt::Write;\n}\n";
+    let directory = fixture(source)?;
+    let output = run(&directory, true)?;
+    assert!(output.status.success(), "{output:?}");
+    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    assert_eq!(
+        fixed,
+        "pub use std::fmt::Debug;\npub(crate) use std::fmt::Display;\n\nmod child;\n\npub use crate::child::Value as PublicValue;\npub(crate) use crate::child::Value as CrateValue;\npub(self) use crate::child::Value as PrivateValue;\nmod nested {\n    pub use std::fmt::Write;\n\n    pub(super) use crate::child::Value as ParentValue;\n    pub(in crate::nested) use crate::child::Value as NestedValue;\n}\n"
+    );
+    let output = run(&directory, false)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(diagnostics(&output).is_empty(), "{output:?}");
+    Ok(())
+}

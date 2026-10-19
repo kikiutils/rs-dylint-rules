@@ -235,32 +235,36 @@ fn semantic_resolver_can_identify_unprefixed_local_imports() {
 }
 
 #[test]
-fn reexport_placement_remains_undecided_and_is_not_rewritten() {
-    let source = "use crate::A;\npub use crate::B;\nuse std::io;\n";
-    let analysis = check(source);
-    assert_eq!(analysis.diagnostics.len(), 1);
-    assert_eq!(analysis.edits, Vec::new());
-    let only_reexport = check("pub use crate::B;\nuse std::io;\n");
-    assert_eq!(only_reexport.diagnostics, Vec::new());
+fn all_import_visibilities_follow_source_groups_and_preserve_tokens() {
+    for visibility in [
+        "",
+        "pub ",
+        "pub(crate) ",
+        "pub(super) ",
+        "pub(self) ",
+        "pub(in crate::parent) ",
+    ] {
+        let source = format!("{visibility}use crate::A as Alias;\nmod child;\n{visibility}use std::fmt;\n");
+        let expected = format!("{visibility}use std::fmt;\n\nmod child;\n\n{visibility}use crate::A as Alias;\n");
+        let analysis = check(&source);
+        assert_eq!(analysis.diagnostics, Vec::new());
+        assert_eq!(analysis.edits.len(), 1);
+        assert_eq!(analysis.apply(&source), expected);
+        assert_eq!(check(&expected).edits, Vec::new());
+    }
 }
 
 #[test]
-fn reexports_outside_the_reordered_region_do_not_block_fixes() {
-    for (source, expected) in [
-        (
-            "use crate::A;\nmod child;\npub(crate) use self::child::B;\n",
-            "mod child;\n\nuse crate::A;\npub(crate) use self::child::B;\n",
-        ),
-        (
-            "pub use crate::B;\nuse crate::A;\nmod child;\n",
-            "pub use crate::B;\nmod child;\n\nuse crate::A;\n",
-        ),
+fn visible_imports_keep_comment_attribute_and_mixed_source_safety_checks() {
+    for source in [
+        "pub use crate::A;\n// attached\npub use std::fmt;\n",
+        "#[allow(unused)]\npub(crate) use crate::A;\npub use std::fmt;\n",
+        "pub use {crate::A, std::fmt};\n",
     ] {
         let analysis = check(source);
-        assert_eq!(analysis.diagnostics, Vec::new());
-        assert_eq!(analysis.edits.len(), 1);
-        assert_eq!(analysis.apply(source), expected);
-        assert_eq!(check(expected).edits, Vec::new());
+        assert!(!analysis.diagnostics.is_empty(), "{source}");
+        assert_eq!(analysis.edits, Vec::new());
+        assert_eq!(analysis.apply(source), source);
     }
 }
 

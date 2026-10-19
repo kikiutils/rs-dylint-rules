@@ -5,7 +5,6 @@ use ra_ap_syntax::{
     ast::{
         self,
         HasAttrs,
-        HasVisibility,
     },
 };
 
@@ -69,11 +68,6 @@ fn check_scope(
             continue;
         }
         if let Some(import) = ast::Use::cast(node.clone()) {
-            // Re-export placement is deliberately undecided in the specification.
-            if import.visibility().is_some() {
-                continue;
-            }
-
             let Some(tree) = import.use_tree() else {
                 continue;
             };
