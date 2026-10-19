@@ -1,5 +1,6 @@
 mod analysis;
 mod compiler;
+mod resolution;
 
 pub(super) const RULE: fn(&mut rustc_lint::LintStore) = self::compiler::register;
 

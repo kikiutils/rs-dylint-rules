@@ -100,8 +100,7 @@ fn run() -> AppResult<()> { let _: Option<Error> = None; fail!("failed"); }
 
 #[test]
 fn prescribed_aliases_reuse_imports_and_conflicts_do_not_get_fixes() -> Result<()> {
-    let source = r#"macro_rules! bail { ($($tokens:tt)*) => { return Ok(()) }; }
-use anyhow::{Error as AnyhowError, Result as AnyhowResult, anyhow, bail, ensure};
+    let source = r#"use anyhow::{Error as AnyhowError, Result as AnyhowResult, anyhow, bail, ensure};
 fn valid(flag: bool) -> anyhow::Result<()> {
     let _ = anyhow::Error::msg("example");
     anyhow::ensure!(flag, "bad");
@@ -109,7 +108,6 @@ fn valid(flag: bool) -> anyhow::Result<()> {
     let _ = anyhow::anyhow!("example");
     Ok(())
 }
-mod inherited { pub fn run() -> anyhow::Result<()> { anyhow::bail!("expected"); } }
 mod conflict {
     type Result<T> = Option<T>;
     fn run() -> anyhow::Result<()> { Ok(()) }
@@ -128,9 +126,8 @@ mod conflict {
     assert!(fixed.contains("fn run() -> anyhow::Result<()>"), "{fixed}");
     assert!(fixed.contains("Option<anyhow::Error>"), "{fixed}");
     assert_eq!(fixed.matches("use anyhow::{").count(), 1, "{fixed}");
-    assert!(fixed.contains("anyhow::bail!(\"expected\")"), "{fixed}");
     (path!(directory.path()) / "src" / "lib.rs").write_sync(format!(
-        "{fixed}\n#[test] fn behavior() {{ assert!(inherited::run().is_err()); }}\n"
+        "{fixed}\n#[test] fn behavior() {{ assert!(valid(true).is_ok()); assert!(valid(false).is_err()); }}\n"
     ))?;
     let output = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
     assert!(output.status.success(), "{output:?}");
@@ -420,5 +417,77 @@ mod conditional {
         .args(["check", "--no-default-features", "--quiet"])
         .output()?;
     assert!(output.status.success(), "{output:?}");
+    Ok(())
+}
+
+#[test]
+fn compiler_names_distinguish_namespaces_scopes_and_macro_expansions() -> Result<()> {
+    let source = r#"use anyhow::{Context, Result, ensure};
+#[derive(Default)] struct Source;
+macro_rules! path { ($value:expr) => { std::path::Path::new($value) }; }
+fn parse() -> Result<()> {
+    let _ = format!("{}", 1);
+    let _ = path!("example");
+    None.ok_or_else(|| anyhow::anyhow!("unrelated macros and derives"))
+}
+mod imported_parent {
+    use anyhow::bail;
+    mod child { fn run() -> anyhow::Result<()> { anyhow::bail!("not inherited import"); } }
+}
+mod generated_type {
+    macro_rules! declare { () => { struct AnyhowError; }; }
+    declare!();
+    fn run() { let _: Option<anyhow::Error> = None; }
+}
+mod generated_block_type {
+    macro_rules! declare { () => { struct AnyhowError; }; }
+    fn run() { declare!(); let _: Option<anyhow::Error> = None; }
+}
+mod other_namespaces {
+    struct Named { anyhow: u32 }
+    macro_rules! methods { () => { impl Named { fn anyhow() {} } }; }
+    methods!();
+    fn run() -> anyhow::Error { anyhow::anyhow!("field and method names") }
+    fn value_local() { let AnyhowError = 1; let _: Option<anyhow::Error> = None; }
+    fn generic<AnyhowError>() { let _: Option<anyhow::Error> = None; }
+}
+mod glob {
+    mod other { pub struct AnyhowError; }
+    macro_rules! imports { () => { use other::*; }; }
+    fn direct() { use other::*; let _: Option<anyhow::Error> = None; }
+    fn generated() { imports!(); let _: Option<anyhow::Error> = None; }
+}
+mod glob_parent {
+    use anyhow::{Result};
+    pub mod child { use super::*; }
+    fn run() -> Result<()> { Err(anyhow::anyhow!("glob consumer")) }
+}
+mod prelude {
+    fn existing() -> Result<(), ()> { Ok(()) }
+    fn target() -> anyhow::Result<()> { Ok(()) }
+}
+"#;
+    let directory = fixture(source)?;
+    let root = path!(directory.path()) / "src";
+    let output = run(&directory, true)?;
+    assert!(output.status.success(), "{output:?}");
+    let fixed = (&root / "lib.rs").read_to_string_sync()?;
+    assert!(
+        fixed.contains("use anyhow::{Context, Result, ensure, anyhow};"),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains("|| anyhow!(\"unrelated macros and derives\")"),
+        "{fixed}"
+    );
+    assert!(fixed.contains("anyhow!(\"field and method names\")"), "{fixed}");
+    assert!(fixed.contains("bail!(\"not inherited import\")"), "{fixed}");
+    assert_eq!(fixed.matches("Option<anyhow::Error>").count(), 5, "{fixed}");
+    assert!(
+        fixed.contains("let AnyhowError = 1; let _: Option<AnyhowError>"),
+        "{fixed}"
+    );
+    assert!(fixed.contains("anyhow::anyhow!(\"glob consumer\")"), "{fixed}");
+    assert!(fixed.contains("fn target() -> anyhow::Result<()>"), "{fixed}");
     Ok(())
 }

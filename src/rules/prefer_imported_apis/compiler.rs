@@ -1,7 +1,4 @@
-use std::collections::{
-    BTreeMap,
-    BTreeSet,
-};
+use std::collections::BTreeMap;
 
 use pathkit::Path;
 use ra_ap_syntax::AstNode;
@@ -54,7 +51,7 @@ pub(super) fn register(store: &mut rustc_lint::LintStore) {
 struct PreferImportedApis {
     files: BTreeMap<(Path, u32), FileFacts>,
     sources: crate::source::ModuleSources,
-    local_macros: BTreeSet<String>,
+    names: super::resolution::Names,
 }
 
 struct FileFacts {
@@ -62,7 +59,7 @@ struct FileFacts {
     facts: Vec<(Fact, hir::HirId)>,
 }
 
-fn api(cx: &LateContext<'_>, definition: DefId) -> Option<Api> {
+pub(super) fn api(cx: &LateContext<'_>, definition: DefId) -> Option<Api> {
     if cx.tcx.crate_name(definition.krate).as_str() != "anyhow" {
         return None;
     }
@@ -121,6 +118,9 @@ impl PreferImportedApis {
                 }
             },
             hir::UseKind::Single(binding) => {
+                for resolution in tree.prefix.res.iter().flatten() {
+                    self.names.binding(cx, id, binding.name.as_str(), *resolution);
+                }
                 if binding.span.from_expansion() {
                     return;
                 }
@@ -141,25 +141,29 @@ impl PreferImportedApis {
                 }
             },
             hir::UseKind::Glob => {
-                if tree.prefix.span.from_expansion() {
-                    return;
-                }
                 for resolution in tree.prefix.res.iter().flatten() {
                     let Res::Def(DefKind::Mod, definition) = resolution else {
                         continue;
                     };
+                    self.names.glob(cx, *definition);
                     let children = if let Some(local) = definition.as_local() {
                         cx.tcx.module_children_local(local)
                     } else {
                         cx.tcx.module_children(*definition)
                     };
                     for child in children {
-                        if child
+                        if !child
                             .vis
                             .is_accessible_from(cx.tcx.parent_module(id).to_local_def_id().to_def_id(), cx.tcx)
-                            && let Res::Def(_, definition) = child.res
+                        {
+                            continue;
+                        }
+                        self.names
+                            .binding(cx, id, child.ident.name.as_str(), child.res.map_id(|_| unreachable!()));
+                        if let Res::Def(_, definition) = child.res
                             && let Some(api) = api(cx, definition)
                             && !api.allows(child.ident.name.as_str())
+                            && !tree.prefix.span.from_expansion()
                         {
                             self.record(cx, tree.prefix.span, id, api, Kind::Glob);
                         }
@@ -182,11 +186,17 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
     }
 
     fn check_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx hir::Item<'tcx>) {
+        if let Some(ident) = item.kind.ident() {
+            let definition = item.owner_id.to_def_id();
+            self.names.binding(
+                cx,
+                item.hir_id(),
+                ident.name.as_str(),
+                Res::Def(cx.tcx.def_kind(definition), definition),
+            );
+        }
         match item.kind {
             hir::ItemKind::Use(tree) => self.import(cx, &tree, item.hir_id()),
-            hir::ItemKind::Macro(name, ..) => {
-                self.local_macros.insert(name.name.to_string());
-            },
             hir::ItemKind::ExternCrate(Some(_), name) if !item.span.from_expansion() => {
                 if let Some(krate) = cx.tcx.extern_mod_stmt_cnum(item.owner_id.def_id)
                     && cx.tcx.crate_name(krate).as_str() == "anyhow"
@@ -198,7 +208,22 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
         }
     }
 
+    fn check_generic_param(&mut self, cx: &LateContext<'tcx>, param: &'tcx hir::GenericParam<'tcx>) {
+        self.names.generic(cx, param);
+    }
+
+    fn check_foreign_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx hir::ForeignItem<'tcx>) {
+        let definition = item.owner_id.to_def_id();
+        self.names.binding(
+            cx,
+            item.hir_id(),
+            item.ident.name.as_str(),
+            Res::Def(cx.tcx.def_kind(definition), definition),
+        );
+    }
+
     fn check_path(&mut self, cx: &LateContext<'tcx>, path: &hir::Path<'tcx>, id: hir::HirId) {
+        self.names.reference(cx, path, id);
         if path.span.from_expansion() {
             return;
         }
@@ -252,7 +277,16 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
             let output = analysis::analyze(
                 source.parsed.syntax(),
                 &facts.facts.iter().map(|(fact, _)| fact.clone()).collect::<Vec<_>>(),
-                &self.local_macros,
+                |request| {
+                    facts
+                        .facts
+                        .iter()
+                        .find_map(|(fact, id)| {
+                            (fact.range.contains_range(request.at) || request.at.contains_range(fact.range))
+                                .then_some(*id)
+                        })
+                        .is_some_and(|id| self.names.safe(cx, id, &request))
+                },
             );
             for issue in output.issues {
                 let diagnostic = &issue.diagnostics[0];

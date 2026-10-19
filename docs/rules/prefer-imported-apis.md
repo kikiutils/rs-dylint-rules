@@ -96,9 +96,9 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 - 若原限定路徑使用了重新匯出的別名，且新增 import 需要引入被禁止的 alias，僅診斷；已有可重用的合法 import 時仍可替換使用點。
 - 替換範圍有註解、使用點或外層帶有未知 attributes，或新增檔案頂層 import 會插到既有前置註解與 item 之間時，僅診斷。
 - `cfg`、lint levels（`allow`／`warn`／`deny`／`forbid`／`expect`）、`doc`、`deprecated`、`must_use`、`non_exhaustive` 與 `repr` 不阻擋修正；`cfg_attr` 遞迴檢查，內含 attributes 全部安全才放行；有未知 attribute macro 時仍只診斷。
-- 名稱衝突、glob 或未知巨集／attributes 可能引入無法可靠確認的 binding 時，保守地僅診斷；不為了強行修正而猜測名稱空間。修正只替換已解析的 API 路徑並新增必要 imports，其餘排版交由 rustfmt。
-- module 作用域含有子模組時，除上述既有分組 import 的巨集補入外，目前不新增 module-level import，避免新增名稱透過子模組的 `super::*` 影響未檢查的其他檔案；可重用的既有 import 不受此限制，函式內仍可安全新增。
-- 若目前 crate 存在同名的本地巨集定義，巨集使用點僅診斷，不改成短名稱，避免父檔案或展開產生的 textual macro 搶先於 imported macro 解析。
+- 依 rustc 已解析的名稱空間、作用域、imports、型別參數與巨集展開產物檢查衝突；其他作用域的同名項目、不同名稱空間的 binding，以及無關的 derives／巨集呼叫不直接阻擋修正。不支援自行定義或以 `#[macro_use]` 引入與指定 anyhow 巨集同名的其他巨集，不追蹤其 textual scope 或匯出傳播。
+- 檢查新增 import 是否捕獲原有型別路徑；無法確認安全時僅診斷。修正只替換已解析的 API 路徑並新增必要 imports，其餘排版交由 rustfmt。
+- module 被其他作用域以 glob 匯入時，不在該 module 新增或補入 import，避免改變 glob 使用端的名稱解析；單純含有子模組不阻擋修正。重用既有 import 不受此限制。
 - 依實際插入作用域或目標 use tree 合併修正，同一 module 的同一巨集 API 只新增一個 binding，不把不同來源的 imports 混入同一分組。
 - 可安全套用的修正使用 `MachineApplicable` suggestion，由 `cargo dylint --fix` 套用；不自行寫檔或呼叫 rustfmt。
 

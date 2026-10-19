@@ -3,6 +3,7 @@ use std::sync::Arc;
 use anyhow::{
     Context,
     Result,
+    anyhow,
     ensure,
 };
 use pathkit::{
@@ -77,7 +78,7 @@ impl Source {
             .edition()
             .to_string()
             .parse()
-            .map_err(|error| anyhow::anyhow!("Unsupported Rust edition: {error}"))?;
+            .map_err(|error| anyhow!("Unsupported Rust edition: {error}"))?;
         let parsed = SourceFile::parse(&text, edition);
         ensure!(
             parsed.errors().is_empty(),
