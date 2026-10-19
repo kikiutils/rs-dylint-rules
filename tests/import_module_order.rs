@@ -42,6 +42,7 @@ fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
             })
         })
     }));
+
     let file = path!(directory.path()) / "src" / "lib.rs";
     assert_eq!(file.read_to_string_sync()?, source);
     let output = run(&directory, true)?;
@@ -50,6 +51,7 @@ fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
         file.read_to_string_sync()?,
         "use std::fmt;\n\nmod child;\n\nuse crate::child::Value;\n"
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(diagnostics(&output).is_empty(), "{output:?}");
@@ -67,6 +69,7 @@ fn comment_barrier_is_diagnostic_only() -> Result<()> {
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         source
     );
+
     Ok(())
 }
 
@@ -74,6 +77,7 @@ fn comment_barrier_is_diagnostic_only() -> Result<()> {
 fn lint_levels_are_honored() -> Result<()> {
     let directory =
         fixture("#![deny(kiki_import_module_order)]\nuse crate::child::Value;\nmod child;\nuse std::fmt;\n")?;
+
     let output = run(&directory, false)?;
     assert!(!output.status.success());
     assert!(!diagnostics(&output).is_empty(), "{output:?}");
@@ -86,6 +90,7 @@ fn lint_levels_are_honored() -> Result<()> {
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         source
     );
+
     Ok(())
 }
 
@@ -93,6 +98,7 @@ fn lint_levels_are_honored() -> Result<()> {
 fn fixes_nested_scopes_and_ignores_inactive_code() -> Result<()> {
     let source =
         "mod child;\nfn run() {\n    use crate::child::Value;\n    use std::fmt;\n}\n#[cfg(any())] mod missing;\n";
+
     let directory = fixture(source)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -102,6 +108,7 @@ fn fixes_nested_scopes_and_ignores_inactive_code() -> Result<()> {
             .find("use std::fmt")
             .is_some_and(|index| index < fixed.find("use crate::child").unwrap_or(0))
     );
+
     assert!(fixed.contains("#[cfg(any())] mod missing;"));
     Ok(())
 }
@@ -117,6 +124,7 @@ fn visible_imports_are_resolved_reordered_and_keep_their_visibility() -> Result<
         fixed,
         "pub use std::fmt::Debug;\npub(crate) use std::fmt::Display;\n\nmod child;\n\npub use crate::child::Value as PublicValue;\npub(crate) use crate::child::Value as CrateValue;\npub(self) use crate::child::Value as PrivateValue;\nmod nested {\n    pub use std::fmt::Write;\n\n    pub(super) use crate::child::Value as ParentValue;\n    pub(in crate::nested) use crate::child::Value as NestedValue;\n}\n"
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(diagnostics(&output).is_empty(), "{output:?}");

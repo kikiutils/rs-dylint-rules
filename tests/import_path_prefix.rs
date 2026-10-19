@@ -48,6 +48,7 @@ mod a {
 }
 pub use crate::a::c::rr::child as bridge;
 ";
+
     let directory = fixture(source)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -64,10 +65,12 @@ pub use crate::a::c::rr::child as bridge;
             "pub use self::child as bridge",
             "pub use self::a::c::rr::child as bridge",
         );
+
     assert_eq!(
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         expected
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(diagnostics(&output).is_empty(), "{output:?}");
@@ -93,6 +96,7 @@ mod a {
     }
 }
 ";
+
     let directory = fixture(source)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -109,6 +113,7 @@ mod a {
             .replace("crate::a::{Value as Uniform", "super::{Value as Uniform")
             .replace("crate::a::*", "super::*")
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(diagnostics(&output).is_empty(), "{output:?}");
@@ -132,6 +137,7 @@ mod a {
     mod denied { use crate::a::Value; }
 }
 ";
+
     let directory = fixture(source)?;
     let output = run(&directory, false)?;
     assert!(!output.status.success(), "{output:?}");
@@ -154,6 +160,7 @@ fn physical_file_names_do_not_determine_module_ancestry() -> Result<()> {
         file.read_to_string_sync()?,
         "use super::Value as Alias;\nuse self::Alias as Second;\n"
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(diagnostics(&output).is_empty(), "{output:?}");

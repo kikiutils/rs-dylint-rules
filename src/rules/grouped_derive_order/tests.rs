@@ -88,11 +88,13 @@ fn skips_cfg_attr_and_macro_token_trees() {
 fn preserves_path_spelling_trailing_comma_and_raw_crlf_offsets() {
     let source =
         "const LABEL: &str = \"型別\";\r\n#[derive(core::cmp::Eq, core::cmp::PartialEq,)]\r\nstruct Value;\r\n";
+
     let parsed = SourceFile::parse(source, Edition::Edition2024);
     let output = analysis::analyze(parsed.tree().syntax(), |range| {
         let name = source[std::ops::Range::<usize>::from(range)].rsplit("::").next()?;
         analysis::sort_key(name)
     });
+
     assert_eq!(
         apply(source, &output),
         "const LABEL: &str = \"型別\";\r\n#[derive(core::cmp::PartialEq, core::cmp::Eq,)]\r\nstruct Value;\r\n"
@@ -110,11 +112,13 @@ fn builtin_attributes_and_resolved_helpers_allow_fixes() {
         let source = format!(
             "#![allow(dead_code)]\n#[cfg(all())]\nmod nested {{ {attribute}\n#[derive(Deserialize, Serialize, Debug)] struct Value; }}\n"
         );
+
         assert_eq!(
             apply(&source, &check(&source)),
             source.replace("Deserialize, Serialize, Debug", "Debug, Serialize, Deserialize")
         );
     }
+
     for (helper, derives) in [("is_empty", "IsEmpty, Debug"), ("strum", "EnumIs, Debug")] {
         let source = format!("#[{helper}(unused)] #[derive({derives})] struct Value;");
         assert_ne!(apply(&source, &check(&source)), source);
@@ -132,6 +136,7 @@ fn helpers_require_a_matching_derive_on_the_same_item() {
         assert_eq!(output.issues.len(), 1);
         assert!(output.issues[0].fix.is_none());
     }
+
     let source = "#[serde(rename_all = \"camelCase\")] #[derive(Serialize)] #[derive(Eq, PartialEq)] struct Value;";
     assert_eq!(
         apply(source, &check(source)),

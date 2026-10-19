@@ -82,6 +82,7 @@ impl ImportTarget {
             Self::Scope(node) => (false, node),
             Self::Group { tree, .. } => (true, tree.syntax()),
         };
+
         let range = node.text_range();
         (group, range.start().into(), range.end().into())
     }
@@ -119,6 +120,7 @@ fn visible_scopes(node: &SyntaxNode) -> Vec<SyntaxNode> {
             }
         }
     }
+
     scopes
 }
 
@@ -140,6 +142,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                 else {
                     continue;
                 };
+
                 let Some(scope) = scope(tree.syntax()) else { continue };
                 let renamed = tree.rename().is_some();
                 let allowed = match fact.api {
@@ -148,6 +151,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     Api::Error => name == "AnyhowError",
                     _ => fact.api.allows(name) && !renamed,
                 };
+
                 if allowed {
                     imports.push(Import {
                         api: fact.api,
@@ -207,6 +211,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     }) else {
                         continue;
                     };
+
                     let Some(path) = call.path() else { continue };
                     (path.syntax().clone(), path.syntax().text_range())
                 } else {
@@ -218,11 +223,14 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     else {
                         continue;
                     };
+
                     if path.syntax().ancestors().any(|node| ast::Use::can_cast(node.kind())) {
                         continue;
                     }
+
                     (path.syntax().clone(), fact.range)
                 };
+
                 let Some(scope) = scope(&node) else { continue };
                 let qualified = text(root, range).contains("::");
                 if !accesses
@@ -240,15 +248,18 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
             },
         }
     }
+
     // Prefer an existing, unconditional module import from the same route.
     // Only compiler-confirmed API imports can serve as anchors.
     for access in &mut accesses {
         if !matches!(access.api, Api::Anyhow | Api::Bail | Api::Ensure) || !access.qualified {
             continue;
         }
+
         let Some(module) = visible_scopes(&access.node).last().cloned() else {
             continue;
         };
+
         // Do not lift an import out of a conditional function/block/impl.
         // Attributes on the module itself guard both its imports and uses.
         let crosses_cfg = access.node.ancestors().take_while(|node| *node != module).any(|node| {
@@ -256,16 +267,20 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                 .filter_map(ast::Attr::cast)
                 .any(|attr| syntax::conditional_attribute(&attr))
         });
+
         if crosses_cfg {
             continue;
         }
+
         let path = text(root, access.range);
         let Some((prefix, leaf)) = path.rsplit_once("::") else {
             continue;
         };
+
         if leaf.trim() != access.api.name() {
             continue;
         }
+
         let candidate = imports
             .iter()
             .filter(|import| import.scope == module)
@@ -289,10 +304,12 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                             })
                     })
             });
+
         if let Some(tree) = candidate {
             access.target = ImportTarget::Group { tree, scope: module };
         }
     }
+
     // Reserve one binding per module/API, including module-level expressions
     // that occur before an otherwise mergeable import. The destination must
     // remain above every use, so an earlier scope insertion wins over a group.
@@ -305,6 +322,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
         {
             continue;
         }
+
         let range = scope.text_range();
         bindings
             .entry((range.start(), range.end(), access.api))
@@ -315,6 +333,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
             })
             .or_insert_with(|| access.target.clone());
     }
+
     for access in &mut accesses {
         let scope = access.target.scope();
         let range = scope.text_range();
@@ -322,6 +341,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
             access.target = target.clone();
         }
     }
+
     let mut groups = FixGroups::new();
     for access in &accesses {
         if !access.qualified {
@@ -331,6 +351,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                 .iter()
                 .filter(|import| import.api == access.api && import.name == name && scopes.contains(&import.scope))
                 .collect();
+
             if !matching.is_empty()
                 && matching
                     .iter()
@@ -341,15 +362,19 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     message: format!("place the import for `{name}` above this use"),
                 });
             }
+
             continue;
         }
+
         let index = output.issues.len();
         output.report(Diagnostic {
             range: access.range,
             message: format!("import this anyhow API first and use `{}`", access.api.name()),
         });
+
         groups.entry(access.target.key()).or_default().push((index, access));
     }
+
     for group in groups.values() {
         let mut edits = Vec::new();
         let mut additions = BTreeMap::new();
@@ -358,6 +383,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
             if protected(&access.node) || has_comments(root, access.range) {
                 continue;
             }
+
             let scopes = visible_scopes(&access.node);
             let existing = scopes.iter().find_map(|scope| {
                 imports.iter().find(|import| {
@@ -367,6 +393,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                         && import.tree.syntax().text_range().end() <= access.range.start()
                 })
             });
+
             let name = existing.map_or(access.api.name(), |import| import.name.as_str());
             if !safe_target(access, existing)
                 || !resolve_name(NameRequest {
@@ -380,6 +407,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
             {
                 continue;
             }
+
             if existing.is_none()
                 && access.api != Api::Error
                 && text(root, access.range).rsplit("::").next().map(str::trim) != Some(name)
@@ -388,17 +416,21 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                 // fixing a route that already uses a re-exported alias.
                 continue;
             }
+
             if existing.is_none() {
                 additions
                     .entry((access.api, text(root, access.range)))
                     .or_insert_with(|| name.to_owned());
             }
+
             edits.push(Edit {
                 range: access.range,
                 replacement: name.to_owned(),
             });
+
             first_issue.get_or_insert(*index);
         }
+
         let Some(index) = first_issue else { continue };
         if !additions.is_empty() {
             let scope = group[0].1.target.scope();
@@ -410,9 +442,11 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     range: TextRange::empty(last.syntax().text_range().end()),
                     replacement: format!(", {}", names.into_iter().collect::<Vec<_>>().join(", ")),
                 });
+
                 output.issues[index].fix = Some(Fix { edits });
                 continue;
             }
+
             let offset = if scope.kind() == SyntaxKind::SOURCE_FILE {
                 scope
                     .children()
@@ -426,18 +460,22 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     .last()
                     .map_or(token.text_range().end(), |attr| attr.syntax().text_range().end())
             };
+
             let preamble_end = scope
                 .children()
                 .find(|node| !ast::AnyAttr::can_cast(node.kind()))
                 .map_or(scope.text_range().end(), |node| node.text_range().start());
+
             if has_comments(root, TextRange::new(scope.text_range().start(), preamble_end)) {
                 continue;
             }
+
             let newline = if root.text().to_string().contains("\r\n") {
                 "\r\n"
             } else {
                 "\n"
             };
+
             let mut statements = String::new();
             // Multiple qualified routes to the same API need only one binding.
             let mut names = Vec::new();
@@ -445,6 +483,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                 if names.contains(&name) {
                     continue;
                 }
+
                 names.push(name.clone());
                 statements.push_str("use ");
                 statements.push_str(&path);
@@ -452,19 +491,24 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     statements.push_str(" as ");
                     statements.push_str(&name);
                 }
+
                 statements.push(';');
                 statements.push_str(newline);
             }
+
             if scope.kind() != SyntaxKind::SOURCE_FILE {
                 statements.insert_str(0, newline);
             }
+
             edits.push(Edit {
                 range: TextRange::empty(offset),
                 replacement: statements,
             });
         }
+
         output.issues[index].fix = Some(Fix { edits });
     }
+
     output
 }
 

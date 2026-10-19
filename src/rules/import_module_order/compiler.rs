@@ -58,11 +58,13 @@ impl FileFacts {
                 .keys()
                 .any(|&(start, end)| range.contains_range(text_range(start, end)));
         }
+
         if let Some(module) = ast::Module::cast(node.clone()) {
             return module
                 .name()
                 .is_some_and(|name| self.modules.iter().any(|(span, _)| *span == name.syntax().text_range()));
         }
+
         self.imports
             .keys()
             .any(|&(start, end)| range.contains_range(text_range(start, end)))
@@ -107,10 +109,12 @@ impl ImportModuleOrder {
                         }),
                         _ => None,
                     });
+
                     groups.next().filter(|group| groups.all(|other| other == *group))
                 },
                 _ => None,
             };
+
             if let Some((file, range)) = self.file(cx, segment.ident.span, cx.tcx.parent_module(id)) {
                 let key = (range.start().into(), range.end().into());
                 file.imports
@@ -123,6 +127,7 @@ impl ImportModuleOrder {
                     .or_insert((group, id));
             }
         }
+
         if let hir::UseKind::Nested { items } = tree.kind {
             for (tree, hir_id, _) in items {
                 self.import(cx, tree, *hir_id);
@@ -140,6 +145,7 @@ impl<'tcx> LateLintPass<'tcx> for ImportModuleOrder {
             module.spans.inner_span,
             id.to_local_def_id().local_def_index.as_u32(),
         );
+
         self.file(cx, module.spans.inner_span, id);
     }
 
@@ -160,9 +166,11 @@ impl<'tcx> LateLintPass<'tcx> for ImportModuleOrder {
             if !self.sources.contains(path, *module) {
                 continue;
             }
+
             let Some(source) = crate::source::Source::load(cx, path, facts.anchor) else {
                 continue;
             };
+
             let output = super::analysis::analyze(
                 source.parsed.syntax(),
                 &|path| {
@@ -175,6 +183,7 @@ impl<'tcx> LateLintPass<'tcx> for ImportModuleOrder {
                 },
                 &|node| facts.active(node),
             );
+
             emit_diagnostics(cx, facts, &source, &output, self.sources.can_fix(path));
         }
     }
@@ -204,6 +213,7 @@ fn emit_diagnostics(
                     .find_map(|(range, id)| diagnostic.range.contains_range(*range).then_some(*id))
             })
             .unwrap_or(hir::CRATE_HIR_ID);
+
         issue.emit(
             cx,
             KIKI_IMPORT_MODULE_ORDER,

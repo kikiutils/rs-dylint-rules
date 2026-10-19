@@ -38,6 +38,7 @@ pub fn run(valid: bool) -> anyhow::Result<()> {
 }
 #[test] fn behavior() { assert!(run(true).is_ok()); assert!(run(false).is_err()); }
 "#;
+
     let directory = fixture(source)?;
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
@@ -51,6 +52,7 @@ pub fn run(valid: bool) -> anyhow::Result<()> {
         "{fixed}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
+
     assert!(fixed.contains("AnyhowError::msg("), "{fixed}");
     assert!(fixed.contains("use anyhow::ensure;"), "{fixed}");
     assert!(fixed.contains("ensure!(valid"), "{fixed}");
@@ -77,6 +79,7 @@ mod wildcard { use anyhow::*; }
 mod late { fn before() -> AnyhowResult<()> { Ok(()) } use anyhow::Result as AnyhowResult; }
 fn run() -> AppResult<()> { let _: Option<Error> = None; fail!("failed"); }
 "#;
+
     let directory = fixture(source)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -84,6 +87,7 @@ fn run() -> AppResult<()> { let _: Option<Error> = None; fail!("failed"); }
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         source
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     let reports = diagnostics(&output);
@@ -95,6 +99,7 @@ fn run() -> AppResult<()> { let _: Option<Error> = None; fail!("failed"); }
             "{reports:?}"
         );
     }
+
     Ok(())
 }
 
@@ -117,6 +122,7 @@ mod conflict {
     }
 }
 "#;
+
     let directory = fixture(source)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -129,6 +135,7 @@ mod conflict {
     (path!(directory.path()) / "src" / "lib.rs").write_sync(format!(
         "{fixed}\n#[test] fn behavior() {{ assert!(valid(true).is_ok()); assert!(valid(false).is_err()); }}\n"
     ))?;
+
     let output = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
     assert!(output.status.success(), "{output:?}");
     Ok(())
@@ -149,11 +156,13 @@ self::pass! { fn generated() -> errors::Result<()> { errors::bail!("bad"); } }
 }
 "#,
     )?;
+
     let manifest = path!(directory.path()) / "Cargo.toml";
     let text = manifest.read_to_string_sync()?.replace(
         "anyhow=\"=1.0.104\"",
         "errors={package=\"anyhow\",version=\"=1.0.104\"}",
     );
+
     manifest.write_sync(text)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -179,6 +188,7 @@ fn denied() -> anyhow::Result<()> { Ok(()) }
 #[cfg(any())] fn inactive() -> missing::Result<()> { unreachable!() }
 ",
     )?;
+
     let output = run(&directory, false)?;
     assert!(!output.status.success(), "{output:?}");
     let messages = diagnostics(&output);
@@ -195,6 +205,7 @@ fn expression() { let _ = include!("expression.rs"); }
 include!("items.rs");
 "#,
     )?;
+
     let root = path!(directory.path()) / "src";
     let expression = &root / "expression.rs";
     let items = &root / "items.rs";
@@ -210,6 +221,7 @@ include!("items.rs");
         items.read_to_string_sync()?,
         "fn included() -> anyhow::Result<()> { anyhow::bail!(\"included\"); }\n"
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(diagnostics(&output).is_empty(), "{output:?}");
@@ -223,6 +235,7 @@ fn glob_checks_only_bindings_visible_from_the_importing_module() -> Result<()> {
 mod hidden { use anyhow::Error; }
 use hidden::*;
 ";
+
     let directory = fixture(source)?;
     let file = path!(directory.path()) / "src" / "lib.rs";
     for visibility in [
@@ -243,6 +256,7 @@ use hidden::*;
             assert_eq!(reports[0]["message"]["spans"][0]["line_start"], 4);
         }
     }
+
     Ok(())
 }
 
@@ -262,6 +276,7 @@ fn context() -> Result<()> {
     None.ok_or_else(|| anyhow::anyhow!("runtime context is not initialized"))
 }
 "#;
+
     let directory = fixture(source)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -272,6 +287,7 @@ fn context() -> Result<()> {
         fixed.contains("|| anyhow!(\"runtime context is not initialized\")"),
         "{fixed}"
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(diagnostics(&output).is_empty(), "{output:?}");
@@ -281,6 +297,7 @@ fn protected() -> anyhow::Result<()> {
     None.ok_or_else(|| anyhow::anyhow!("keep attribute boundary"))
 }
 "#;
+
     let directory = fixture(source)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -289,6 +306,7 @@ fn protected() -> anyhow::Result<()> {
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         source
     );
+
     Ok(())
 }
 
@@ -322,6 +340,7 @@ mod conditional_missing {
     fn run() { let _ = anyhow::anyhow!("conditional local"); }
 }
 "#;
+
     let directory = fixture(source)?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
@@ -332,16 +351,19 @@ mod conditional_missing {
         1,
         "{fixed}"
     );
+
     assert_eq!(fixed.matches("use anyhow::anyhow;").count(), 4, "{fixed}");
     assert!(!fixed.contains("anyhow::anyhow!("), "{fixed}");
     assert!(
         fixed.contains("fn run() -> Result<()> {\nuse anyhow::anyhow;"),
         "{fixed}"
     );
+
     assert!(
         fixed.contains("{\nuse anyhow::anyhow;\n return Err(anyhow!(\"conditional block\")"),
         "{fixed}"
     );
+
     assert!(fixed.contains("missing::unresolved!()"), "{fixed}");
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
@@ -350,6 +372,7 @@ mod conditional_missing {
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         fixed
     );
+
     Ok(())
 }
 
@@ -385,12 +408,14 @@ mod conditional {
     fn run() { let _ = anyhow::anyhow!("conditional import"); }
 }
 "#;
+
     let directory = fixture(source)?;
     let manifest = path!(directory.path()) / "Cargo.toml";
     manifest.write_sync(format!(
         "{}\n[features]\ndefault=[\"conditional\"]\nconditional=[]\n",
         manifest.read_to_string_sync()?
     ))?;
+
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
     let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
@@ -399,6 +424,7 @@ mod conditional {
         "{fixed}\n{}",
         String::from_utf8_lossy(&output.stderr)
     );
+
     assert!(fixed.contains("use anyhow::{Result, anyhow};"), "{fixed}");
     assert!(fixed.contains("use facade::{Result, anyhow};"), "{fixed}");
     assert!(fixed.contains("use anyhow::{bail, ensure};"), "{fixed}");
@@ -408,14 +434,17 @@ mod conditional {
         .split("mod static_context")
         .nth(1)
         .and_then(|text| text.split("mod documented").next());
+
     assert_eq!(
         static_module.map(|text| text.matches("use anyhow::anyhow;").count()),
         Some(1),
         "{fixed}"
     );
+
     let output = support::cargo(&directory)
         .args(["check", "--no-default-features", "--quiet"])
         .output()?;
+
     assert!(output.status.success(), "{output:?}");
     Ok(())
 }
@@ -467,6 +496,7 @@ mod prelude {
     fn target() -> anyhow::Result<()> { Ok(()) }
 }
 "#;
+
     let directory = fixture(source)?;
     let root = path!(directory.path()) / "src";
     let output = run(&directory, true)?;
@@ -476,10 +506,12 @@ mod prelude {
         fixed.contains("use anyhow::{Context, Result, ensure, anyhow};"),
         "{fixed}"
     );
+
     assert!(
         fixed.contains("|| anyhow!(\"unrelated macros and derives\")"),
         "{fixed}"
     );
+
     assert!(fixed.contains("anyhow!(\"field and method names\")"), "{fixed}");
     assert!(fixed.contains("bail!(\"not inherited import\")"), "{fixed}");
     assert_eq!(fixed.matches("Option<anyhow::Error>").count(), 5, "{fixed}");
@@ -487,6 +519,7 @@ mod prelude {
         fixed.contains("let AnyhowError = 1; let _: Option<AnyhowError>"),
         "{fixed}"
     );
+
     assert!(fixed.contains("anyhow::anyhow!(\"glob consumer\")"), "{fixed}");
     assert!(fixed.contains("fn target() -> anyhow::Result<()>"), "{fixed}");
     Ok(())

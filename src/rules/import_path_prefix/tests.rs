@@ -19,6 +19,7 @@ fn segments(source: &str, names: &[&str]) -> Vec<Segment> {
             let Some(relative) = source[offset..].find(name) else {
                 panic!("missing test segment")
             };
+
             let start = offset + relative;
             offset = start + name.len();
             Segment {
@@ -37,8 +38,10 @@ fn prefixes_use_the_closest_non_root_ancestor() {
         let Some(plan) = analysis::plan(&segments, 2, base, consumed) else {
             panic!("missing plan")
         };
+
         assert_eq!(plan.replacement, prefix);
     }
+
     let source = "use super::super::other::Value;";
     let segments = self::segments(source, &["super", "super", "other", "Value"]);
     assert_eq!(
@@ -101,6 +104,7 @@ fn comments_groups_and_enclosing_attributes_block_unsafe_edits() {
         let Some(plan) = analysis::plan(&segments, 2, 2, consumed) else {
             panic!("missing plan")
         };
+
         assert_eq!(
             analysis::edit(parsed.tree().syntax(), &segments, &plan, false).is_some(),
             allowed,
@@ -126,6 +130,7 @@ fn cfg_attr_checks_all_nested_attributes() {
         let Some(plan) = analysis::plan(&segments, 1, 1, 2) else {
             panic!("missing plan")
         };
+
         assert_eq!(
             analysis::edit(parsed.tree().syntax(), &segments, &plan, false).is_some(),
             allowed,
@@ -142,10 +147,12 @@ fn split_preserves_visibility_attributes_aliases_and_globs() {
     let Some(edit) = analysis::split_import(parsed.tree().syntax(), &segments, &[]) else {
         panic!("missing split edit")
     };
+
     assert_eq!(
         edit.replacement,
         "#[cfg(all())] pub(crate) use crate::a as A;\n#[cfg(all())] pub(crate) use crate::a::Value as V;\n#[cfg(all())] pub(crate) use crate::a::*;\n#[cfg(all())] pub(crate) use crate::b::Other;"
     );
+
     for source in [
         "use crate::{a::Value, /* keep */ b::Other};",
         "#[observe] use crate::{a::Value, b::Other};",

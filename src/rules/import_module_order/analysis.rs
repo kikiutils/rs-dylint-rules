@@ -67,6 +67,7 @@ fn check_scope(
         if !is_active(&node) {
             continue;
         }
+
         if let Some(import) = ast::Use::cast(node.clone()) {
             let Some(tree) = import.use_tree() else {
                 continue;
@@ -137,9 +138,11 @@ fn is_test_module(module: &ast::Module) -> bool {
         let Some(ast::Meta::CfgMeta(meta)) = attribute.meta() else {
             return false;
         };
+
         let Some(ast::CfgPredicate::CfgAtom(atom)) = meta.cfg_predicate() else {
             return false;
         };
+
         atom.eq_token().is_none() && atom.ident_token().is_some_and(|token| token.text() == "test")
     })
 }

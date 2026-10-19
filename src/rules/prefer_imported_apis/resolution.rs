@@ -83,11 +83,13 @@ impl Names {
         if !candidate(name, namespace) {
             return;
         }
+
         if let Res::Def(DefKind::Macro(kinds), _) = res
             && !kinds.contains(MacroKinds::BANG)
         {
             return;
         }
+
         self.bindings.push(Name {
             name: name.to_owned(),
             namespace,
@@ -105,10 +107,12 @@ impl Names {
         if !matches!(param.kind, hir::GenericParamKind::Type { .. }) {
             return;
         }
+
         let name = param.name.ident().name.to_string();
         if !candidate(&name, Namespace::TypeNS) {
             return;
         }
+
         self.bindings.push(Name {
             name,
             namespace: Namespace::TypeNS,
@@ -126,6 +130,7 @@ impl Names {
         if !candidate(&name, namespace) {
             return;
         }
+
         self.references.push(Name {
             name,
             namespace,
@@ -144,6 +149,7 @@ impl Names {
             Api::Anyhow | Api::Bail | Api::Ensure => Namespace::MacroNS,
             _ => Namespace::TypeNS,
         };
+
         let own_module = module(cx, id);
         let parents = ancestry(cx, id);
         let target = if request.module_target {
@@ -155,27 +161,33 @@ impl Names {
             }) else {
                 return false;
             };
+
             target
         };
+
         // A module import can flow through another scope's glob, including
         // child-file super::* consumers. Do not mutate those unseen bindings.
         if !request.reuse && request.module_target && self.glob_sources.contains(&target) {
             return false;
         }
+
         for binding in &self.bindings {
             if binding.name != request.name || binding.namespace != namespace {
                 continue;
             }
+
             // Ordinary item and import bindings do not flow into child modules.
             if binding.module != own_module {
                 continue;
             }
+
             if (parents.contains(&binding.scope) || binding.scope == target)
                 && !(request.reuse && binding.api == Some(request.api))
             {
                 return false;
             }
         }
+
         // A new import must not capture existing paths, including prelude names.
         request.reuse
             || !self.references.iter().any(|reference| {

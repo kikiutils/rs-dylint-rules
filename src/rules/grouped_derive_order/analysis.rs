@@ -47,15 +47,19 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
         let Some((tree, inner, paths)) = derive_list(&attribute) else {
             continue;
         };
+
         if paths.len() < 2 {
             continue;
         }
+
         let Some(keys) = paths.iter().map(|range| resolve(*range)).collect::<Option<Vec<_>>>() else {
             continue;
         };
+
         if keys.windows(2).all(|pair| pair[0] <= pair[1]) {
             continue;
         }
+
         let range = attribute.syntax().text_range();
         let diagnostic = Diagnostic {
             range,
@@ -68,6 +72,7 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
                     .join("; ")
             ),
         };
+
         let owner = attribute.syntax().parent();
         let owner_keys: Vec<_> = owner
             .iter()
@@ -77,6 +82,7 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
             .flat_map(|(_, _, paths)| paths)
             .filter_map(&resolve)
             .collect();
+
         let protected = attribute.syntax().ancestors().skip(1).any(|ancestor| {
             ancestor.children().filter_map(ast::Attr::cast).any(|other| {
                 !safe_attribute(
@@ -85,14 +91,17 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
                 )
             })
         });
+
         let comments = tree
             .syntax()
             .descendants_with_tokens()
             .any(|element| matches!(element.kind(), SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT));
+
         if protected || comments {
             output.report(diagnostic);
             continue;
         }
+
         let mut ordered: Vec<_> = paths.iter().zip(keys).collect();
         ordered.sort_by_key(|(_, key)| *key);
         let mut replacement = ordered
@@ -100,12 +109,14 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
             .map(|(range, _)| source[std::ops::Range::<usize>::from(**range - base)].to_owned())
             .collect::<Vec<_>>()
             .join(", ");
+
         if source[std::ops::Range::<usize>::from(inner - base)]
             .trim_end()
             .ends_with(',')
         {
             replacement.push(',');
         }
+
         output.issues.push(Issue {
             diagnostics: vec![diagnostic],
             fix: Some(Fix {
@@ -116,6 +127,7 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
             }),
         });
     }
+
     output
 }
 
@@ -123,12 +135,14 @@ fn derive_meta(attribute: &ast::Attr) -> Option<ast::TokenTreeMeta> {
     let ast::Meta::TokenTreeMeta(meta) = attribute.meta()? else {
         return None;
     };
+
     let path = meta
         .path()?
         .syntax()
         .text()
         .to_string()
         .replace(char::is_whitespace, "");
+
     matches!(
         path.as_str(),
         "derive" | "core::derive" | "std::derive" | "::core::derive" | "::std::derive"
@@ -155,6 +169,7 @@ fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<
             supported = false;
             break;
         }
+
         match element.kind() {
             SyntaxKind::WHITESPACE | SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT => {},
             SyntaxKind::COMMA => {
@@ -171,9 +186,11 @@ fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<
             },
         }
     }
+
     if let (Some(start), Some(end)) = (start, end) {
         paths.push(TextRange::new(start, end));
     }
+
     supported.then_some((tree, inner, paths))
 }
 
@@ -181,9 +198,11 @@ fn safe_attribute(attribute: &ast::Attr, owner_keys: Option<&[SortKey]>) -> bool
     if derive_meta(attribute).is_some() {
         return true;
     }
+
     if syntax::inert_attribute(attribute) {
         return true;
     }
+
     let Some(meta) = attribute.meta() else { return false };
     let Some(name) = meta.simple_name() else { return false };
     match name.as_str() {
@@ -195,6 +214,7 @@ fn safe_attribute(attribute: &ast::Attr, owner_keys: Option<&[SortKey]>) -> bool
                 "strum" => &["EnumIs", "EnumCount", "VariantNames", "VariantArray"],
                 _ => unreachable!(),
             };
+
             derives
                 .iter()
                 .filter_map(|name| sort_key(name))

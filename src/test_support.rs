@@ -7,5 +7,6 @@ pub(crate) fn apply_edits<'a>(source: &str, edits: impl Iterator<Item = &'a Edit
     for edit in edits {
         fixed.replace_range(std::ops::Range::<usize>::from(edit.range), &edit.replacement);
     }
+
     fixed
 }

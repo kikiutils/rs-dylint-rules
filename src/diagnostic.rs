@@ -57,6 +57,7 @@ impl Issue {
                 for other in self.diagnostics.iter().skip(1) {
                     diag.span_label(source.span(other.range), other.message.clone());
                 }
+
                 if let Some(fix) = self.fix.as_ref().filter(|_| can_fix) {
                     diag.multipart_suggestion(
                         help,

@@ -35,18 +35,21 @@ pub(super) fn plan(segments: &[Segment], depth: usize, base: usize, consumed: us
             .collect::<Vec<_>>()
             .join("::")
     };
+
     if consumed == 0 {
         return Some(Plan {
             range: TextRange::empty(first.range.start()),
             replacement: format!("{prefix}::"),
         });
     }
+
     let last = &segments[consumed - 1];
     let actual = segments[..consumed]
         .iter()
         .map(|segment| segment.name.as_str())
         .collect::<Vec<_>>()
         .join("::");
+
     (actual != prefix).then_some(Plan {
         range: TextRange::new(first.range.start(), last.range.end()),
         replacement: prefix,
@@ -59,13 +62,16 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
     if !glob && segments.last()?.range.end() == plan.range.end() {
         return None;
     }
+
     let import = root
         .descendants()
         .filter_map(ast::Use::cast)
         .find(|item| item.syntax().text_range().contains_range(segments[0].range))?;
+
     if syntax::protected(import.syntax()) {
         return None;
     }
+
     // Replacements may span multiple segments only when they are a contiguous
     // path. In particular, never erase braces, aliases, comments or siblings.
     let source = root.text().to_string();
@@ -75,6 +81,7 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
         if !plan.range.contains_range(gap) {
             continue;
         }
+
         let text = &source[std::ops::Range::<usize>::from(gap - base)];
         if text
             .chars()
@@ -85,6 +92,7 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
             return None;
         }
     }
+
     Some(Edit {
         range: plan.range,
         replacement: plan.replacement.clone(),
@@ -99,6 +107,7 @@ pub(super) fn split_import(root: &SyntaxNode, segments: &[Segment], plans: &[(&[
         .descendants()
         .filter_map(ast::Use::cast)
         .find(|item| item.syntax().text_range().contains_range(first.range))?;
+
     if syntax::protected(import.syntax())
         || syntax::has_comments(import.syntax(), import.syntax().text_range())
         || import
@@ -110,23 +119,27 @@ pub(super) fn split_import(root: &SyntaxNode, segments: &[Segment], plans: &[(&[
     {
         return None;
     }
+
     let tree = import.use_tree()?;
     let mut paths = Vec::new();
     flatten(&tree, &[], plans, &mut paths)?;
     if paths.len() < 2 && tree.use_tree_list().is_none() {
         return None;
     }
+
     let source = root.text().to_string();
     let base = root.text_range().start();
     let prefix = &source[std::ops::Range::<usize>::from(
         TextRange::new(import.syntax().text_range().start(), tree.syntax().text_range().start()) - base,
     )];
+
     let newline = if source.contains("\r\n") { "\r\n" } else { "\n" };
     let replacement = paths
         .iter()
         .map(|path| format!("{prefix}{path};"))
         .collect::<Vec<_>>()
         .join(newline);
+
     (!paths.is_empty()).then_some(Edit {
         range: import.syntax().text_range(),
         replacement,
@@ -145,17 +158,21 @@ fn flatten(
         if path.syntax().text().to_string().trim_start().starts_with("::") {
             return None;
         }
+
         segments.extend(path.segments().map(|segment| Segment {
             name: segment.syntax().text().to_string(),
             range: segment.syntax().text_range(),
         }));
     }
+
     if let Some(list) = tree.use_tree_list() {
         for child in list.use_trees() {
             flatten(&child, &segments, plans, output)?;
         }
+
         return Some(());
     }
+
     let mut names: Vec<_> = segments.iter().map(|segment| segment.name.clone()).collect();
     if let Some((_, plan)) = plans.iter().find(|(path, _)| {
         path.iter()
@@ -170,28 +187,35 @@ fn flatten(
                 .position(|segment| segment.range.end() == plan.range.end())?
                 + 1
         };
+
         // Anchor-module imports still require their own grouped-self policy.
         if consumed < names.len() || tree.star_token().is_some() {
             names.splice(..consumed, [plan.replacement.trim_end_matches("::").to_owned()]);
         }
     }
+
     if names.len() > 1 && names.last().is_some_and(|name| name == "self") {
         names.pop();
     }
+
     let mut full = names.join("::");
     if tree.star_token().is_some() {
         if !full.is_empty() {
             full.push_str("::");
         }
+
         full.push('*');
     }
+
     if let Some(rename) = tree.rename() {
         full.push(' ');
         full.push_str(&rename.syntax().text().to_string());
     }
+
     if full.is_empty() {
         return None;
     }
+
     output.push(full);
     Some(())
 }

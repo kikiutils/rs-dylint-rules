@@ -32,6 +32,7 @@ fn fixes_builtin_lists_independently_and_resolves_aliases() -> Result<()> {
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         "use core::fmt::Debug as FormatDebug;\n#[derive(Clone, Copy)]\n#[derive(FormatDebug, PartialEq, Eq, Hash)]\npub struct Value(u32);\nfn nested() {\n    #[derive(Debug, PartialEq, Eq)]\n    struct Nested;\n}\n"
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(!has_lint(&output), "{output:?}");
@@ -54,6 +55,7 @@ fn honors_lint_levels_and_inactive_items() -> Result<()> {
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         source
     );
+
     Ok(())
 }
 
@@ -65,6 +67,7 @@ fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists(
     (&root / "custom" / "src").create_dir_all_sync()?;
     (&root / "custom" / "Cargo.toml")
         .write_sync("[package]\nname=\"custom\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[lib]\nproc-macro=true\n")?;
+
     (&root / "custom" / "src" / "lib.rs").write_sync("extern crate proc_macro;\n#[proc_macro_derive(Clone)] pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(Serialize)] pub fn serialize(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(IsEmpty)] pub fn empty(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(Serialize_repr)] pub fn repr(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(EnumCount)] pub fn count(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n")?;
     let manifest = &root / "Cargo.toml";
     let text = manifest.read_to_string_sync()?;
@@ -75,6 +78,7 @@ fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists(
         (&root / "src" / "lib.rs").read_to_string_sync()?,
         "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Eq, custom::IsEmpty, PartialEq)]\npub struct ProtectedEmpty;\n#[derive(Eq, custom::Serialize_repr, PartialEq)]\npub struct ProtectedRepr;\n#[derive(Eq, custom::EnumCount, PartialEq)]\npub struct ProtectedStrum;\n#[derive(PartialEq, Eq, Hash)]\npub struct Plain;\n"
     );
+
     Ok(())
 }
 
@@ -88,6 +92,7 @@ fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> Result<()> 
         let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }
+
     assert_eq!(
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         source.replace(
@@ -95,6 +100,7 @@ fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> Result<()> 
             "Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash"
         )
     );
+
     Ok(())
 }
 
@@ -103,6 +109,7 @@ fn shared_source_module_instances_keep_their_own_lint_levels() -> Result<()> {
     let directory = fixture(
         "#[allow(kiki_grouped_derive_order)]\n#[path=\"shared.rs\"] mod permitted;\n#[deny(kiki_grouped_derive_order)]\n#[path=\"shared.rs\"] mod forbidden;\n",
     )?;
+
     (path!(directory.path()) / "src" / "shared.rs").write_sync("#[derive(Eq, PartialEq)]\npub struct Value;\n")?;
     let output = run(&directory, false)?;
     assert!(!output.status.success());
@@ -129,12 +136,14 @@ pub enum State { Ready, Value(u32) }
     assert_eq!(serde_json::to_string(&serde_json::from_str::<State>(&state).unwrap()).unwrap(), state);
 }
 "##;
+
     let directory = fixture(source)?;
     let manifest = path!(directory.path()) / "Cargo.toml";
     let text = manifest.read_to_string_sync()?;
     manifest.write_sync(format!(
         "{text}\n[dependencies]\nrenamed={{package=\"serde\",version=\"=1.0.229\", features=[\"derive\"]}}\nserde_json=\"=1.0.154\"\n"
     ))?;
+
     let file = path!(directory.path()) / "src" / "lib.rs";
     for fix in [false, true] {
         let output = run(&directory, fix)?;
@@ -142,9 +151,11 @@ pub enum State { Ready, Value(u32) }
         if !fix {
             assert!(has_lint(&output), "{output:?}");
         }
+
         let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }
+
     assert_eq!(
         file.read_to_string_sync()?,
         source
@@ -157,6 +168,7 @@ pub enum State { Ready, Value(u32) }
                 "renamed::Serialize, renamed::Deserialize"
             )
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(!has_lint(&output), "{output:?}");
@@ -192,6 +204,7 @@ pub enum State { Ready, Done }
     assert!(!State::Done.is_ready());
 }
 "#;
+
     let directory = fixture(source)?;
     let manifest = path!(directory.path()) / "Cargo.toml";
     let text = manifest.read_to_string_sync()?;
@@ -202,9 +215,11 @@ pub enum State { Ready, Done }
         if !fix {
             assert!(has_lint(&output), "{output:?}");
         }
+
         let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }
+
     assert_eq!(
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         source
@@ -215,6 +230,7 @@ pub enum State { Ready, Done }
                 "Debug, PartialEq, strum::EnumIs, Count, Names, strum::VariantArray"
             )
     );
+
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
     assert!(!has_lint(&output), "{output:?}");

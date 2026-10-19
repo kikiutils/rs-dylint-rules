@@ -23,6 +23,7 @@ fn inert_meta(meta: ast::Meta) -> bool {
     if let ast::Meta::CfgAttrMeta(meta) = meta {
         return meta.metas().all(inert_meta);
     }
+
     meta.simple_name().is_some_and(|name| {
         matches!(
             name.as_str(),
@@ -62,5 +63,6 @@ pub(crate) fn has_expectation(meta: ast::Meta) -> bool {
     if let ast::Meta::CfgAttrMeta(meta) = meta {
         return meta.metas().any(has_expectation);
     }
+
     meta.simple_name().is_some_and(|name| name == "expect")
 }

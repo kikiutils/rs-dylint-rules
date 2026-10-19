@@ -15,6 +15,7 @@ pub(crate) fn fixture(source: &str) -> Result<TempDir> {
     (path!(directory.path()) / "src").create_dir_sync()?;
     (path!(directory.path()) / "Cargo.toml")
         .write_sync("[package]\nname=\"lint-fixture\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[workspace]\n")?;
+
     (path!(directory.path()) / "src" / "lib.rs").write_sync(source)?;
     Ok(directory)
 }
@@ -25,6 +26,7 @@ pub(crate) fn cargo(directory: &TempDir) -> Command {
     command
         .current_dir(directory.path())
         .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"));
+
     command
 }
 
@@ -33,19 +35,23 @@ pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> Result<Output> 
     let flags = format!(
         "-A unused -A kiki_import_module_order -A kiki_import_path_prefix -A kiki_grouped_derive_order -A kiki_prefer_imported_apis -A kiki_statement_padding -W {lint}"
     );
+
     command.env("DYLINT_RUSTFLAGS", flags).args([
         "dylint",
         "--path",
         env!("CARGO_MANIFEST_DIR"),
         "--fail-on-no-libraries",
     ]);
+
     if fix {
         command.arg("--fix");
     }
+
     command.args(["--", "--lib", "--message-format=json", "--quiet"]);
     if fix {
         command.args(["--allow-no-vcs", "--allow-dirty"]);
     }
+
     Ok(command.output()?)
 }
 

@@ -29,6 +29,7 @@ impl From<RuleOutput> for Analysis {
             edits: Vec::new(),
             fixed: 0,
         };
+
         for issue in output.issues {
             if let Some(fix) = issue.fix {
                 result.fixed += issue.diagnostics.len();
@@ -37,6 +38,7 @@ impl From<RuleOutput> for Analysis {
                 result.diagnostics.extend(issue.diagnostics);
             }
         }
+
         result
     }
 }
@@ -70,6 +72,7 @@ fn test_only_external_modules_are_not_part_of_import_ordering() {
         assert!(analysis.diagnostics.is_empty(), "{source}");
         assert!(analysis.edits.is_empty(), "{source}");
     }
+
     for source in [
         "use crate::A;\nmod tests;\n",
         "use crate::A;\n#[cfg(not(test))]\nmod tests;\n",

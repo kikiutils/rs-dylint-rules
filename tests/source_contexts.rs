@@ -14,6 +14,7 @@ fn rules_preserve_shared_module_sources_and_include_fragments() -> Result<()> {
 pub fn expression() -> u8 { include!("expression.rs") }
 "#,
     )?;
+
     let root = path!(directory.path()) / "src";
     let shared = r#"#[derive(Eq, PartialEq)] pub struct Value;
 use crate::a::Value as Imported;
@@ -21,10 +22,12 @@ use std::fmt;
 pub fn origin() -> &'static str { std::any::type_name::<Imported>() }
 pub fn error() -> anyhow::Error { anyhow::anyhow!("shared") }
 "#;
+
     let fragment = r#"{ use crate::a::Value; use std::fmt;
 #[derive(Eq, PartialEq)] struct Nested;
 let _ = anyhow::anyhow!("fragment"); 0 }
 "#;
+
     (&root / "shared.rs").write_sync(shared)?;
     (&root / "expression.rs").write_sync(fragment)?;
     let manifest = path!(directory.path()) / "Cargo.toml";
@@ -32,6 +35,7 @@ let _ = anyhow::anyhow!("fragment"); 0 }
         "{}\n[dependencies]\nanyhow=\"=1.0.104\"\n",
         manifest.read_to_string_sync()?
     ))?;
+
     for lint in [
         "kiki_import_module_order",
         "kiki_import_path_prefix",
@@ -45,5 +49,6 @@ let _ = anyhow::anyhow!("fragment"); 0 }
         assert_eq!((&root / "shared.rs").read_to_string_sync()?, shared, "{lint}");
         assert_eq!((&root / "expression.rs").read_to_string_sync()?, fragment, "{lint}");
     }
+
     Ok(())
 }

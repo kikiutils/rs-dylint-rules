@@ -76,12 +76,15 @@ impl ImportPathPrefix {
             for (child, id, _) in items {
                 self.import(cx, child, *id, &segments);
             }
+
             return;
         }
+
         let Some(&first) = segments.first() else { return };
         if segments.iter().any(|segment| segment.ident.span.from_expansion()) {
             return;
         }
+
         let module = cx.tcx.parent_module(id).to_local_def_id();
         let mut ancestors = vec![module];
         let mut current = module;
@@ -90,9 +93,11 @@ impl ImportPathPrefix {
             if parent == current {
                 break;
             }
+
             ancestors.push(parent);
             current = parent;
         }
+
         ancestors.reverse();
         let depth = ancestors.len() - 1;
         let (mut base, mut consumed) = match first.ident.name {
@@ -103,6 +108,7 @@ impl ImportPathPrefix {
                     .iter()
                     .take_while(|segment| segment.ident.name == kw::Super)
                     .count();
+
                 let Some(base) = depth.checked_sub(count) else { return };
                 (base, count)
             },
@@ -115,18 +121,22 @@ impl ImportPathPrefix {
                 } else {
                     vec![first.res]
                 };
+
                 if !resolutions.iter().copied().any(local) {
                     return;
                 }
+
                 // A block-local binding is not necessarily visible through self::.
                 if !cx.tcx.module_children_local(module).iter().any(|child| {
                     child.ident.name == first.ident.name && resolutions.contains(&child.res.map_id(|_| unreachable!()))
                 }) {
                     return;
                 }
+
                 (depth, 0)
             },
         };
+
         // Consume only declarations on the real ancestry, with their original
         // names. A re-export/alias must remain part of the written route.
         while base < depth && consumed < segments.len() {
@@ -137,28 +147,35 @@ impl ImportPathPrefix {
             {
                 break;
             }
+
             base += 1;
             consumed += 1;
         }
+
         let Some((path, _)) = crate::source::locate(cx, first.ident.span) else {
             return;
         };
+
         let mut source_segments = Vec::new();
         for segment in segments {
             let Some((segment_path, range)) = crate::source::locate(cx, segment.ident.span) else {
                 return;
             };
+
             if segment_path != path {
                 return;
             }
+
             source_segments.push(Segment {
                 name: segment.ident.name.to_string(),
                 range,
             });
         }
+
         let Some(plan) = analysis::plan(&source_segments, depth, base, consumed) else {
             return;
         };
+
         self.files
             .entry((path, module.local_def_index.as_u32()))
             .or_insert_with(|| FileFacts {
@@ -195,9 +212,11 @@ impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
             if !self.sources.contains(path, *module) {
                 continue;
             }
+
             let Some(source) = crate::source::Source::load(cx, path, facts.anchor) else {
                 continue;
             };
+
             let mut emitted = Vec::new();
             let mut split_ranges = Vec::new();
             for import in &facts.paths {
@@ -212,9 +231,11 @@ impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
                 {
                     continue;
                 }
+
                 if emitted.contains(&import.plan) {
                     continue;
                 }
+
                 emitted.push(import.plan.clone());
                 let edit = analysis::edit(source.parsed.syntax(), &import.segments, &import.plan, import.glob).filter(
                     |edit| {
@@ -224,6 +245,7 @@ impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
                             .all(|other| other.plan == import.plan || other.plan.range.intersect(edit.range).is_none())
                     },
                 );
+
                 let edit = edit.or_else(|| {
                     let split = analysis::split_import(
                         source.parsed.syntax(),
@@ -234,12 +256,15 @@ impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
                             .map(|path| (path.segments.as_slice(), &path.plan))
                             .collect::<Vec<_>>(),
                     )?;
+
                     if split_ranges.contains(&split.range) {
                         return None;
                     }
+
                     split_ranges.push(split.range);
                     Some(split)
                 });
+
                 let edit = edit.filter(|_| self.sources.can_fix(path));
                 cx.tcx.emit_node_span_lint(
                     KIKI_IMPORT_PATH_PREFIX,

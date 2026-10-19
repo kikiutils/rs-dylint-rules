@@ -63,9 +63,11 @@ pub(super) fn api(cx: &LateContext<'_>, definition: DefId) -> Option<Api> {
     if cx.tcx.crate_name(definition.krate).as_str() != "anyhow" {
         return None;
     }
+
     if definition.index == CRATE_DEF_INDEX {
         return Some(Api::Crate);
     }
+
     if matches!(cx.tcx.def_kind(definition), DefKind::Macro(_)) {
         return match cx.tcx.item_name(definition).as_str() {
             "anyhow" => Some(Api::Anyhow),
@@ -74,6 +76,7 @@ pub(super) fn api(cx: &LateContext<'_>, definition: DefId) -> Option<Api> {
             _ => None,
         };
     }
+
     if cx
         .tcx
         .opt_parent(definition)
@@ -81,6 +84,7 @@ pub(super) fn api(cx: &LateContext<'_>, definition: DefId) -> Option<Api> {
     {
         return None;
     }
+
     match cx.tcx.item_name(definition).as_str() {
         "Result" => Some(Api::Result),
         "Error" => Some(Api::Error),
@@ -93,6 +97,7 @@ impl PreferImportedApis {
         let Some((path, range)) = crate::source::locate(cx, span) else {
             return;
         };
+
         let facts = &mut self
             .files
             .entry((
@@ -104,6 +109,7 @@ impl PreferImportedApis {
                 facts: Vec::new(),
             })
             .facts;
+
         let fact = Fact { range, api, kind };
         if !facts.iter().any(|(existing, _)| *existing == fact) {
             facts.push((fact, id));
@@ -121,9 +127,11 @@ impl PreferImportedApis {
                 for resolution in tree.prefix.res.iter().flatten() {
                     self.names.binding(cx, id, binding.name.as_str(), *resolution);
                 }
+
                 if binding.span.from_expansion() {
                     return;
                 }
+
                 for resolution in tree.prefix.res.iter().flatten() {
                     if let Res::Def(_, definition) = resolution
                         && let Some(api) = api(cx, *definition)
@@ -145,12 +153,14 @@ impl PreferImportedApis {
                     let Res::Def(DefKind::Mod, definition) = resolution else {
                         continue;
                     };
+
                     self.names.glob(cx, *definition);
                     let children = if let Some(local) = definition.as_local() {
                         cx.tcx.module_children_local(local)
                     } else {
                         cx.tcx.module_children(*definition)
                     };
+
                     for child in children {
                         if !child
                             .vis
@@ -158,8 +168,10 @@ impl PreferImportedApis {
                         {
                             continue;
                         }
+
                         self.names
                             .binding(cx, id, child.ident.name.as_str(), child.res.map_id(|_| unreachable!()));
+
                         if let Res::Def(_, definition) = child.res
                             && let Some(api) = api(cx, definition)
                             && !api.allows(child.ident.name.as_str())
@@ -195,6 +207,7 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
                 Res::Def(cx.tcx.def_kind(definition), definition),
             );
         }
+
         match item.kind {
             hir::ItemKind::Use(tree) => self.import(cx, &tree, item.hir_id()),
             hir::ItemKind::ExternCrate(Some(_), name) if !item.span.from_expansion() => {
@@ -227,12 +240,14 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
         if path.span.from_expansion() {
             return;
         }
+
         for (index, segment) in path.segments.iter().enumerate() {
             let resolution = if index + 1 == path.segments.len() {
                 path.res
             } else {
                 segment.res
             };
+
             if let Res::Def(_, definition) = resolution
                 && let Some(api) = api(cx, definition)
                 && api != Api::Crate
@@ -244,6 +259,7 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
                     api,
                     Kind::Access,
                 );
+
                 break;
             }
         }
@@ -260,6 +276,7 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
             {
                 self.record(cx, data.call_site, expression.hir_id, api, Kind::Macro);
             }
+
             expansion = data.parent;
         }
     }
@@ -271,9 +288,11 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
             if !self.sources.contains(path, key.1) {
                 continue;
             }
+
             let Some(source) = crate::source::Source::load(cx, path, facts.anchor) else {
                 continue;
             };
+
             let output = analysis::analyze(
                 source.parsed.syntax(),
                 &facts.facts.iter().map(|(fact, _)| fact.clone()).collect::<Vec<_>>(),
@@ -288,6 +307,7 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
                         .is_some_and(|id| self.names.safe(cx, id, &request))
                 },
             );
+
             for issue in output.issues {
                 let diagnostic = &issue.diagnostics[0];
                 let Some(id) = facts.facts.iter().find_map(|(fact, id)| {
@@ -296,6 +316,7 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
                 }) else {
                     continue;
                 };
+
                 issue.emit(
                     cx,
                     KIKI_PREFER_IMPORTED_APIS,
