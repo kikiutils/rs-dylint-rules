@@ -6,11 +6,11 @@
 
 ## 適用範圍
 
-- `.rs` 檔案內自身 crate 路徑的使用點，包含運算式、型別、模式與巨集呼叫路徑。
-- 包含檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊。
-- 遞迴檢查各作用域，依該位置實際可見的名稱與路徑解析結果判斷。
-- `use` 與 `pub use` 內的路徑由 `import-path-prefix` 處理，不重複診斷。
-- rustdoc 中的 Rust 程式碼區塊為選配；若實作過於複雜，可以不支援。
+- 檢查對象為imports 以外，自身 crate 路徑的使用點，包含運算式、型別、模式與巨集呼叫路徑；所有可見性的 imports 由 `import-path-prefix` 處理。
+- 檢查 Cargo／rustc 在當次 target、features 與 cfg 下實際載入的自有 Rust 來源。
+- 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置。
+- 遞迴檢查各作用域；涉及名稱、路徑或型別時，以 rustc 的實際解析結果為準。
+- 未啟用的程式碼不檢查；rustdoc 程式碼區塊與巨集相關支援範圍由各規則另行說明。
 
 ## 規則
 
@@ -18,7 +18,7 @@
 
 - 使用點禁止直接使用 `super::` 或 `crate::` 路徑，包含透過這些前綴存取 module、函式、型別、常數或其他 items。
 - 上層或其他分支的依賴必須先在上方 imports 定義區匯入，再於使用點使用匯入名稱。
-- `super::` 與 `crate::` 可出現在 `use` 或 `pub use` 中，前綴選擇遵守 `import-path-prefix`。
+- 所有可見性的 imports（`use`、`pub use` 與各種 `pub(...) use`）均不受使用點限制；其中的前綴選擇遵守 `import-path-prefix`。
 - 目前作用域已可見的自身 items 或子模組可以直接使用，不要求為了滿足本規則而新增多餘 imports。
 
 ### 匯入粒度由使用端決定
@@ -40,7 +40,7 @@
 ### 與其他規則的分工
 
 - `import-module-order`：imports 與模組宣告的分區順序。
-- `import-path-prefix`：`use` 與 `pub use` 內的來源路徑前綴。
+- `import-path-prefix`：所有可見性 imports 內的來源路徑前綴。
 - 本規則：一般使用點不得直接以 `super::` 或 `crate::` 存取依賴，但不強制 `self::` 或匯入粒度。
 
 ## 正確範例
@@ -164,3 +164,8 @@ fn run() {
 - 沒有可用名稱時只提供診斷，不自動新增或搬動 imports，也不替使用端決定匯入粒度或 alias。
 - 保留泛型參數、註解與其他語法，不自動新增或移除 `self::`。
 - 遇到名稱遮蔽或無法可靠處理的巨集時，不自動修正。
+
+### 完成進度
+
+- [ ] 草案，尚未實作；rustdoc、巨集相關支援與其他未定邊界於實作前確認。
+- [ ] 明確定義「上方 imports 定義區」的作用域與位置，不預先要求所有 imports 搬至檔案頂層。

@@ -6,11 +6,11 @@
 
 ## 適用範圍
 
-- `.rs` 檔案中，任何允許宣告 `use` 的作用域都適用。
-- 包含檔案頂層、inline module（`mod name { ... }`）、函式與方法本體，以及 closure、async block、控制流程或其他巢狀區塊內的局部 imports。
-- 遞迴檢查每個作用域內的 imports；路徑判斷以該處所屬的 Rust module 為準，不以檔案目錄或區塊巢狀深度計算。
-- 一般 `use` 與所有可見性的 re-exports（例如 `pub use`、`pub(crate) use`）皆適用。
-- rustdoc 中的 Rust 程式碼區塊為選配；若實作過於複雜，可以不支援。
+- 檢查對象為所有可見性的 imports（`use`、`pub use` 與各種 `pub(...) use`）中，自身 crate 的來源路徑。
+- 檢查 Cargo／rustc 在當次 target、features 與 cfg 下實際載入的自有 Rust 來源。
+- 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置。
+- 遞迴檢查各作用域；涉及名稱、路徑或型別時，以 rustc 的實際解析結果為準。
+- 未啟用的程式碼不檢查；rustdoc 程式碼區塊與巨集相關支援範圍由各規則另行說明。
 
 ## 規則
 
@@ -22,7 +22,7 @@
 - 若必須回到 crate root 才能到達目標，必須使用 `crate::`，禁止改成一路回到 root 的 `super::` 鏈。
 - 目前 module 本身就是 crate root 時，匯入 root 自身或其子模組仍適用 `self::` 規則，因為不需要向上回到 root。
 - 函式、closure、async block 與一般區塊不會增加 module 層級；inline module 會增加 module 層級。
-- 不因路徑較短就跨過 re-export 改用另一條路徑；必須保留原 import 的目標與語意。
+- 前綴依原 import 經過的模組或 re-export 路徑判斷，不只看最終 item 的定義位置；不得因路徑較短就改走另一個 re-export 或直接指向原始定義。
 - 標準函式庫與第三方 crate imports 不受此前綴規則限制，不得誤加 `self::`。
 
 ### 與其他規則的分工
@@ -152,7 +152,8 @@ use super::super::super::other::OtherType;
 
 ## 例外
 
-目前沒有指定一般例外。無法可靠解析路徑的情況屬於實作限制，不代表允許使用不符合規則的前綴。
+- 函式或一般區塊內宣告、匯入的局部名稱，不一定屬於所屬 module 的命名空間；若加入 `self::` 等前綴會改變解析結果，不得套用模組前綴規則。
+- 無法可靠解析路徑的情況屬於實作限制，不代表允許使用不符合規則的前綴。
 
 ## Auto-fix
 
@@ -161,4 +162,8 @@ use super::super::super::other::OtherType;
 - 只在能確認 module 層級與路徑解析結果不變時，替換路徑前綴。
 - 保留 aliases、可見性、attributes 與註解，不改變匯入目標。
 - 群組 imports 若混合不同目標，只修正能安全處理的部分；必要時拆分，無法確認時只提供診斷。
-- 不靠檔案目錄深度猜測 `super::` 數量；遇到 `#[path]`、巨集或其他無法確認 module 結構的情況，不自動修正。
+- 不靠檔案目錄深度猜測 `super::` 數量；以 rustc 提供的 module 結構為準，`#[path]` 本身不阻擋修正。巨集或其他情況若無法確認 module 結構與解析結果，不自動修正。
+
+### 完成進度
+
+- [ ] 草案，尚未實作；rustdoc、巨集相關支援與其他未定邊界於實作前確認。
