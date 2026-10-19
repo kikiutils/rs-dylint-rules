@@ -106,25 +106,41 @@ fn serialization_group_follows_builtins_and_keeps_its_own_fixed_order() {
 }
 
 #[test]
-fn integer_repr_allows_fix_but_other_attributes_still_protect_the_item() {
-    let source = "#[derive(Deserialize_repr, Serialize_repr, Debug)]\n#[repr(u8)]\nenum Value { A }\n";
-    let output = check(source);
-    assert_eq!(
-        apply(source, &output),
-        source.replace(
-            "Deserialize_repr, Serialize_repr, Debug",
-            "Debug, Serialize_repr, Deserialize_repr"
-        )
-    );
+fn builtin_attributes_and_resolved_helpers_allow_fixes() {
     for attribute in [
-        "#[observe]",
+        "#[repr(u8)]",
         "#[repr(C, u8)]",
         "#[repr(/* note */ u8)]",
-        "#[serde(other)]",
+        "#[serde(rename_all = \"camelCase\")]",
     ] {
-        let protected = format!("{attribute}\n{source}");
-        let output = check(&protected);
-        assert_eq!(output.issues.len(), 1);
-        assert_eq!(apply(&protected, &output), protected);
+        let source = format!(
+            "#![allow(dead_code)]\n#[cfg(all())]\nmod nested {{ {attribute}\n#[derive(Deserialize, Serialize, Debug)] struct Value; }}\n"
+        );
+        assert_eq!(
+            apply(&source, &check(&source)),
+            source.replace("Deserialize, Serialize, Debug", "Debug, Serialize, Deserialize")
+        );
     }
+    for (helper, derives) in [("is_empty", "IsEmpty, Debug"), ("strum", "EnumIs, Debug")] {
+        let source = format!("#[{helper}(unused)] #[derive({derives})] struct Value;");
+        assert_ne!(apply(&source, &check(&source)), source);
+    }
+}
+
+#[test]
+fn helpers_require_a_matching_derive_on_the_same_item() {
+    for source in [
+        "#[serde(other)] #[derive(Eq, PartialEq)] struct Value;",
+        "#[serde(other)] mod nested { #[derive(Deserialize, Serialize)] struct Value; }",
+        "#[cfg_attr(all(), observe)] #[derive(Eq, PartialEq)] struct Value;",
+    ] {
+        let output = check(source);
+        assert_eq!(output.issues.len(), 1);
+        assert!(output.issues[0].fix.is_none());
+    }
+    let source = "#[serde(rename_all = \"camelCase\")] #[derive(Serialize)] #[derive(Eq, PartialEq)] struct Value;";
+    assert_eq!(
+        apply(source, &check(source)),
+        source.replace("Eq, PartialEq", "PartialEq, Eq")
+    );
 }

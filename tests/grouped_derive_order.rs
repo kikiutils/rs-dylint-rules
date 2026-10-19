@@ -197,10 +197,14 @@ pub enum State { Ready, Value(u32) }
 }
 
 #[test]
-fn renamed_serde_dependency_with_helper_attributes_is_diagnostic_only() -> Result<()> {
-    let source = r#"#[derive(renamed::Deserialize, renamed::Serialize)]
+fn renamed_serde_dependency_with_helper_attributes_is_fixed() -> Result<()> {
+    let source = r#"#![allow(dead_code)]
+#[cfg(all())]
+mod nested {
+#[derive(renamed::Deserialize, renamed::Serialize)]
 #[serde(crate = "renamed", rename_all = "camelCase")]
 pub struct Value { pub some_field: u32 }
+}
 "#;
     let directory = fixture(source)?;
     let manifest = path!(directory.path()) / "Cargo.toml";
@@ -210,11 +214,16 @@ pub struct Value { pub some_field: u32 }
     ))?;
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
-    assert!(has_lint(&output), "{output:?}");
     assert_eq!(
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
-        source
+        source.replace(
+            "renamed::Deserialize, renamed::Serialize",
+            "renamed::Serialize, renamed::Deserialize"
+        )
     );
+    let output = run(&directory, false)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!has_lint(&output), "{output:?}");
     Ok(())
 }
 

@@ -41,44 +41,10 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
     let source = root.text().to_string();
     let base = root.text_range().start();
     for attribute in root.descendants().filter_map(ast::Attr::cast) {
-        let Some(meta) = derive_meta(&attribute) else { continue };
-        let Some(tree) = meta.token_tree() else { continue };
-        let Some(left) = tree.l_paren_token() else { continue };
-        let Some(right) = tree.r_paren_token() else { continue };
-        let inner = TextRange::new(left.text_range().end(), right.text_range().start());
-        let mut paths = Vec::new();
-        let mut start = None;
-        let mut end = None;
-        let mut supported = true;
-        for element in tree
-            .syntax()
-            .children_with_tokens()
-            .filter(|element| inner.contains_range(element.text_range()))
-        {
-            if element.as_node().is_some() {
-                supported = false;
-                break;
-            }
-            match element.kind() {
-                SyntaxKind::WHITESPACE | SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT => {},
-                SyntaxKind::COMMA => {
-                    if let (Some(start), Some(end)) = (start.take(), end.take()) {
-                        paths.push(TextRange::new(start, end));
-                    } else {
-                        supported = false;
-                        break;
-                    }
-                },
-                _ => {
-                    start.get_or_insert(element.text_range().start());
-                    end = Some(element.text_range().end());
-                },
-            }
-        }
-        if let (Some(start), Some(end)) = (start, end) {
-            paths.push(TextRange::new(start, end));
-        }
-        if !supported || paths.len() < 2 {
+        let Some((tree, inner, paths)) = derive_list(&attribute) else {
+            continue;
+        };
+        if paths.len() < 2 {
             continue;
         }
         let Some(keys) = paths.iter().map(|range| resolve(*range)).collect::<Option<Vec<_>>>() else {
@@ -99,11 +65,22 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
                     .join("; ")
             ),
         };
+        let owner = attribute.syntax().parent();
+        let owner_keys: Vec<_> = owner
+            .iter()
+            .flat_map(SyntaxNode::children)
+            .filter_map(ast::Attr::cast)
+            .filter_map(|attr| derive_list(&attr))
+            .flat_map(|(_, _, paths)| paths)
+            .filter_map(&resolve)
+            .collect();
         let protected = attribute.syntax().ancestors().skip(1).any(|ancestor| {
-            ancestor
-                .children()
-                .filter_map(ast::Attr::cast)
-                .any(|other| derive_meta(&other).is_none() && !integer_repr(&other))
+            ancestor.children().filter_map(ast::Attr::cast).any(|other| {
+                !safe_attribute(
+                    &other,
+                    (owner.as_ref() == Some(&ancestor)).then_some(owner_keys.as_slice()),
+                )
+            })
         });
         let comments = tree
             .syntax()
@@ -156,22 +133,69 @@ fn derive_meta(attribute: &ast::Attr) -> Option<ast::TokenTreeMeta> {
     .then_some(meta)
 }
 
-// An integer repr changes layout, not the order-dependent macro input policy.
-fn integer_repr(attribute: &ast::Attr) -> bool {
-    let Some(ast::Meta::TokenTreeMeta(meta)) = attribute.meta() else {
-        return false;
-    };
-    let Some(path) = meta.path() else { return false };
-    if path.syntax().text() != "repr" {
-        return false;
+fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<TextRange>)> {
+    let meta = derive_meta(attribute)?;
+    let tree = meta.token_tree()?;
+    let left = tree.l_paren_token()?;
+    let right = tree.r_paren_token()?;
+    let inner = TextRange::new(left.text_range().end(), right.text_range().start());
+    let mut paths = Vec::new();
+    let mut start = None;
+    let mut end = None;
+    let mut supported = true;
+    for element in tree
+        .syntax()
+        .children_with_tokens()
+        .filter(|element| inner.contains_range(element.text_range()))
+    {
+        if element.as_node().is_some() {
+            supported = false;
+            break;
+        }
+        match element.kind() {
+            SyntaxKind::WHITESPACE | SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT => {},
+            SyntaxKind::COMMA => {
+                if let (Some(start), Some(end)) = (start.take(), end.take()) {
+                    paths.push(TextRange::new(start, end));
+                } else {
+                    supported = false;
+                    break;
+                }
+            },
+            _ => {
+                start.get_or_insert(element.text_range().start());
+                end = Some(element.text_range().end());
+            },
+        }
     }
-    let Some(tree) = meta.token_tree() else { return false };
-    let text = tree.syntax().text().to_string();
-    let Some(inner) = text.strip_prefix('(').and_then(|text| text.strip_suffix(')')) else {
-        return false;
-    };
-    matches!(
-        inner.trim(),
-        "u8" | "u16" | "u32" | "u64" | "u128" | "usize" | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-    )
+    if let (Some(start), Some(end)) = (start, end) {
+        paths.push(TextRange::new(start, end));
+    }
+    supported.then_some((tree, inner, paths))
+}
+
+fn safe_attribute(attribute: &ast::Attr, owner_keys: Option<&[SortKey]>) -> bool {
+    if derive_meta(attribute).is_some() {
+        return true;
+    }
+    let Some(meta) = attribute.meta() else { return false };
+    let Some(name) = meta.simple_name() else { return false };
+    match name.as_str() {
+        "cfg" | "allow" | "warn" | "deny" | "forbid" | "expect" | "doc" | "deprecated" | "must_use"
+        | "non_exhaustive" | "repr" => true,
+        "serde" | "is_empty" | "strum" => {
+            let Some(keys) = owner_keys else { return false };
+            let derives: &[&str] = match name.as_str() {
+                "serde" => &["Serialize", "Deserialize", "Deserialize_repr"],
+                "is_empty" => &["IsEmpty"],
+                "strum" => &["EnumIs", "EnumCount", "VariantNames", "VariantArray"],
+                _ => unreachable!(),
+            };
+            derives
+                .iter()
+                .filter_map(|name| sort_key(name))
+                .any(|key| keys.contains(&key))
+        },
+        _ => false,
+    }
 }

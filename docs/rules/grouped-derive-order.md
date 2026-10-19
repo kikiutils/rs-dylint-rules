@@ -104,7 +104,7 @@ struct Value(u32);
 
 - 無法確認所有項目均為支援之 derive 時，略過該列表，不猜測巨集來源，也不排序剩餘的已知子區段。
 - 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
-- 定義或其外層帶有非 derive、非單一整數 `#[repr(...)]` 的 attributes 時，採保守策略：可辨識的純已知列表仍提供診斷，但不自動修正，避免外層 attribute macro 觀察到不同 tokens。此限制也包含 `#[serde(...)]` helper attributes；僅放行單一整數 repr（如 `#[repr(u8)]`），複合 repr、含註解的 repr 與其他 attributes 仍不放行。
+- 允許 `cfg`、lint levels（`allow`／`warn`／`deny`／`forbid`／`expect`）、`doc`、`deprecated`、`must_use`、`non_exhaustive` 與 `repr` attributes。定義自身的 `serde`、`is_empty`、`strum` helper attributes，須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。未知 attributes、外層 helper 同名 attributes 及 `cfg_attr` 仍只診斷、不修正，避免改變 attribute macro 的輸入。
 - 無法編譯或無法可靠對應原文與 compiler expansion 的程式碼，不保證能產生本規則的診斷。
 
 ## Auto-fix
@@ -130,6 +130,6 @@ is_empty_derive `0.1.0` 的 [產生器](https://docs.rs/crate/is_empty_derive/0.
 - [x] 純內建 derive 的功能分組與固定順序。
 - [x] 各 attribute 獨立處理、未知列表略過、alias 來源辨識與安全修正邊界。
 - [x] 加入 Serde `Serialize`／`Deserialize`，驗證來源、aliases、helper attribute 邊界及序列化往返。
-- [x] 加入 is_empty `IsEmpty`、serde_repr derives 與單一整數 repr 修正白名單。
+- [x] 加入 is_empty `IsEmpty`、serde_repr derives 及已知內建／helper attributes 的安全修正。
 - [x] 加入 Strum `EnumIs`、`EnumCount`、`VariantNames`、`VariantArray`。
 - [ ] 經查核後逐項擴充其餘第三方 derives。
