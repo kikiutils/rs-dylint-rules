@@ -1,5 +1,4 @@
-use std::collections::HashSet;
-
+use kikiutils::types::fx_collections::FxHashSet;
 use ra_ap_syntax::TextRange;
 use rustc_hir::{
     self as hir,
@@ -30,7 +29,7 @@ pub(super) struct NameRequest<'a> {
 pub(super) struct Names {
     bindings: Vec<Name>,
     references: Vec<Name>,
-    glob_sources: HashSet<hir::HirId>,
+    glob_sources: FxHashSet<hir::HirId>,
 }
 
 struct Name {

@@ -124,6 +124,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a31eee39dddec8330830986fcd7625edb5a24ec90ea038215273bbc3adb08ac6"
 
 [[package]]
+name = "dashmap"
+version = "6.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e6361d5c062261c78a176addb82d4c821ae42bed6089de0e12603cd25de2059c"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "dissimilar"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -307,11 +321,23 @@ dependencies = [
  "anyhow",
  "dylint_linting",
  "expect-test",
+ "kikiutils",
  "pathkit",
  "ra_ap_syntax",
  "serde_json",
  "tempfile",
  "unicode-ident",
+]
+
+[[package]]
+name = "kikiutils"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a1a621509d3e74de1ae6fbe1dab00e79eb9aa78b1dbc55c91467cdf790a6bf21"
+dependencies = [
+ "dashmap",
+ "num_enum",
+ "rustc-hash 2.1.3",
 ]
 
 [[package]]
@@ -351,6 +377,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 
 [[package]]
+name = "lock_api"
+version = "0.4.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "224399e74b87b5f3557511d98dff8b14089b3dadafcab6bb93eab67d3aace965"
+dependencies = [
+ "scopeguard",
+]
+
+[[package]]
 name = "log"
 version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -381,10 +416,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "num_enum"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d0bca838442ec211fa11de3a8b0e0e8f3a4522575b5c4c06ed722e005036f26"
+dependencies = [
+ "num_enum_derive",
+ "rustversion",
+]
+
+[[package]]
+name = "num_enum_derive"
+version = "0.7.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
+dependencies = [
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.119",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
+
+[[package]]
+name = "parking_lot_core"
+version = "0.9.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2621685985a2ebf1c516881c026032ac7deafcda1a2c9b7850dc81e3dfcb64c1"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "redox_syscall",
+ "smallvec",
+ "windows-link",
+]
 
 [[package]]
 name = "paste"
@@ -439,6 +509,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f6b464fbc74e149a392436b17d523f769e057cb6877f6a5c4618bc6f11800548"
 
 [[package]]
+name = "proc-macro-crate"
+version = "3.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
+dependencies = [
+ "toml_edit",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -475,15 +554,15 @@ dependencies = [
 
 [[package]]
 name = "ra_ap_edition"
-version = "0.0.358"
+version = "0.0.359"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e95437d4702879e3851c80580524f36025589b3eeaec3f7798cdf88671c130b"
+checksum = "e40783f9c3f80a882ca667747f49d1db912dd047c8512dadb66636a70bbe6d1e"
 
 [[package]]
 name = "ra_ap_parser"
-version = "0.0.358"
+version = "0.0.359"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64b1543d3639a969f5cb4d55a94154ef672f5e1c873b6161407f5705e3164bbc"
+checksum = "f540df8cb5fdfbee3679149b1a2a9b9e631d414385ab1f17c4f2ae38ce491b3d"
 dependencies = [
  "drop_bomb",
  "ra-ap-rustc_lexer",
@@ -495,9 +574,9 @@ dependencies = [
 
 [[package]]
 name = "ra_ap_stdx"
-version = "0.0.358"
+version = "0.0.359"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60c564fa8518154e983d5c49be54bfc970cd91ba5b7fd9be07289e1965aa42cc"
+checksum = "5603480e6dc86c8e014bfa6ee88aa9b3d73d8fc48646eaaf3d7db155658c20ca"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-utils",
@@ -511,9 +590,9 @@ dependencies = [
 
 [[package]]
 name = "ra_ap_syntax"
-version = "0.0.358"
+version = "0.0.359"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3b6f7b5310d58d302b6e654b7b7013676a94c462e9e21ae2152d49e5d067ae1"
+checksum = "02e3161a42822421820e060bf93a6e5e954f2a99e1594da4d1e46f8765b5570c"
 dependencies = [
  "either",
  "itertools",
@@ -527,6 +606,15 @@ dependencies = [
  "smol_str",
  "tracing",
  "triomphe",
+]
+
+[[package]]
+name = "redox_syscall"
+version = "0.5.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed2bf2547551a7053d6fdfafda3f938979645c44812fbfcda098faae3f1a362d"
+dependencies = [
+ "bitflags",
 ]
 
 [[package]]
@@ -609,6 +697,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
 
 [[package]]
+name = "scopeguard"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
+
+[[package]]
 name = "semver"
 version = "1.0.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -645,7 +739,7 @@ checksum = "e7a5d71263a5a7d47b41f6b3f06ba276f10cc18b0931f1799f710578e2309348"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 3.0.9",
 ]
 
 [[package]]
@@ -690,6 +784,17 @@ checksum = "4aaa7368fcf4852a4c2dd92df0cace6a71f2091ca0a23391ce7f3a31833f1523"
 dependencies = [
  "borsh",
  "serde_core",
+]
+
+[[package]]
+name = "syn"
+version = "2.0.119"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "872831b642d1a07999a962a351ed35b955ea2cfc8f3862091e2a240a84f17297"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-ident",
 ]
 
 [[package]]
@@ -739,7 +844,7 @@ checksum = "fe5197923287db20a58125f0bc85c062f7f2c892de97b18c356f9efb14b28524"
 dependencies = [
  "proc-macro2",
  "quote",
- "syn",
+ "syn 3.0.9",
 ]
 
 [[package]]

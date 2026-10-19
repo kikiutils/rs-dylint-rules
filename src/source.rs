@@ -135,7 +135,11 @@ impl ModuleSources {
     }
 
     pub(crate) fn contains_path(&self, path: &Path) -> bool {
-        self.modules.iter().any(|(owned, _)| owned == path)
+        // Entries sort by path first, so only the first entry at or after (path, 0) can match.
+        self.modules
+            .range((path.clone(), u32::MIN)..)
+            .next()
+            .is_some_and(|(owned, _)| owned == path)
     }
 
     pub(crate) fn can_fix(&self, path: &Path) -> bool {
