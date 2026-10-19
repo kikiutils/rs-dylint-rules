@@ -86,3 +86,35 @@ impl Source {
         )
     }
 }
+
+// Track module-owned files independently of rule facts. This excludes standalone
+// include! fragments and prevents edits to one file from changing another module
+// instance's meaning. Inline modules have distinct source ranges.
+#[derive(Default)]
+pub(crate) struct ModuleSources {
+    modules: std::collections::BTreeSet<(Path, u32)>,
+    spans: std::collections::BTreeMap<(Path, u32, u32), u32>,
+    shared: std::collections::BTreeSet<Path>,
+}
+
+impl ModuleSources {
+    pub(crate) fn record(&mut self, cx: &LateContext<'_>, span: Span, module: u32) {
+        let Some((path, range)) = locate(cx, span) else { return };
+        self.modules.insert((path.clone(), module));
+        if self
+            .spans
+            .insert((path.clone(), range.start().into(), range.end().into()), module)
+            .is_some_and(|previous| previous != module)
+        {
+            self.shared.insert(path);
+        }
+    }
+
+    pub(crate) fn contains(&self, path: &Path, module: u32) -> bool {
+        self.modules.contains(&(path.clone(), module))
+    }
+
+    pub(crate) fn can_fix(&self, path: &Path) -> bool {
+        !self.shared.contains(path)
+    }
+}

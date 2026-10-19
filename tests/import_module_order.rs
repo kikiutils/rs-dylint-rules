@@ -1,7 +1,4 @@
-use std::process::{
-    Command,
-    Output,
-};
+use std::process::Output;
 
 use anyhow::Result;
 use pathkit::{
@@ -10,44 +7,20 @@ use pathkit::{
 };
 use tempfile::TempDir;
 
+mod support;
+
 fn fixture(source: &str) -> Result<TempDir> {
-    let directory = tempfile::tempdir()?;
-    (path!(directory.path()) / "src").create_dir_sync()?;
-    (path!(directory.path()) / "Cargo.toml")
-        .write_sync("[package]\nname=\"lint-fixture\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[workspace]\n")?;
-    (path!(directory.path()) / "src" / "lib.rs").write_sync(source)?;
+    let directory = support::fixture(source)?;
     (path!(directory.path()) / "src" / "child.rs").write_sync("pub struct Value;\n")?;
     Ok(directory)
 }
 
 fn run(directory: &TempDir, fix: bool) -> Result<Output> {
-    let mut command = Command::new("cargo");
-    command
-        .env("DYLINT_RUSTFLAGS", "-A unused -A kiki_import_path_prefix")
-        .current_dir(directory.path())
-        .args([
-            "+nightly-2026-10-01",
-            "dylint",
-            "--path",
-            env!("CARGO_MANIFEST_DIR"),
-            "--fail-on-no-libraries",
-        ]);
-    if fix {
-        command.arg("--fix");
-    }
-    command.args(["--", "--lib", "--message-format=json", "--quiet"]);
-    if fix {
-        command.args(["--allow-no-vcs", "--allow-dirty"]);
-    }
-    Ok(command.output()?)
+    support::run(directory, fix, "kiki_import_module_order")
 }
 
 fn diagnostics(output: &Output) -> Vec<serde_json::Value> {
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|message| message["message"]["code"]["code"] == "kiki_import_module_order")
-        .collect()
+    support::diagnostics(output, "kiki_import_module_order")
 }
 
 #[test]

@@ -87,7 +87,7 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 
 ## Auto-fix
 
-- 優先重用使用點已可見、位於上方且名稱合規的 import；巨集缺少 import 時，優先併入同一 module 上方、同一路徑且無 attributes／註解的既有私有分組 import；其他情況在最近可合法加入 `use` 的作用域開頭新增必要的 imports。函式內的使用點可新增函式內 import，不強制提升至 module。
+- 優先重用使用點已可見、位於上方、名稱合規且不帶條件 attributes 的 import；巨集缺少 import 時，優先併入同一 module 上方、同一路徑且無 attributes／註解的既有私有分組 import；其他情況在最近可合法加入 `use` 的作用域開頭新增必要的 imports。函式內的使用點可新增函式內 import，不強制提升至 module。
 - 不跨越使用點與所在 module 之間的 `cfg` 邊界提升巨集 import；條件函式或 block 內缺少巨集 import 時，於該條件作用域內新增。module 自身的 `cfg` 同時涵蓋其 imports 與內容，不阻擋 module 內合併。
 - 缺少 `Result` import 時，預設使用 `Result`；若有名稱衝突則僅診斷，不自行改選 alias。已存在的 `AnyhowResult` 可重用；`Error` 一律使用 `AnyhowError`。
 - 只新增實際需要的 imports 並替換相關使用點，不自動匯入全部 API。
@@ -95,11 +95,11 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 - 違規 aliases、公開重新匯出與含有不合規名稱的 glob 目前僅診斷，不自動重新命名或展開，避免漏改其他檔案、巨集及對外 API。
 - 若原限定路徑使用了重新匯出的別名，且新增 import 需要引入被禁止的 alias，僅診斷；已有可重用的合法 import 時仍可替換使用點。
 - 替換範圍有註解、使用點或外層帶有未知 attributes，或新增檔案頂層 import 會插到既有前置註解與 item 之間時，僅診斷。
-- `cfg`、lint levels（`allow`／`warn`／`deny`／`forbid`／`expect`）、`doc`、`deprecated`、`must_use`、`non_exhaustive` 與 `repr` 不阻擋修正；`cfg_attr` 仍保守處理，因其可能啟用 attribute macro。
+- `cfg`、lint levels（`allow`／`warn`／`deny`／`forbid`／`expect`）、`doc`、`deprecated`、`must_use`、`non_exhaustive` 與 `repr` 不阻擋修正；`cfg_attr` 遞迴檢查，內含 attributes 全部安全才放行；有未知 attribute macro 時仍只診斷。
 - 名稱衝突、glob 或未知巨集／attributes 可能引入無法可靠確認的 binding 時，保守地僅診斷；不為了強行修正而猜測名稱空間。修正只替換已解析的 API 路徑並新增必要 imports，其餘排版交由 rustfmt。
 - module 作用域含有子模組時，除上述既有分組 import 的巨集補入外，目前不新增 module-level import，避免新增名稱透過子模組的 `super::*` 影響未檢查的其他檔案；可重用的既有 import 不受此限制，函式內仍可安全新增。
 - 若目前 crate 存在同名的本地巨集定義，巨集使用點僅診斷，不改成短名稱，避免父檔案或展開產生的 textual macro 搶先於 imported macro 解析。
-- 同一作用域的安全修正合併為同一份 suggestion，避免多個新增 imports 在同一插入點互相衝突。
+- 依實際插入作用域或目標 use tree 合併修正，同一 module 的同一巨集 API 只新增一個 binding，不把不同來源的 imports 混入同一分組。
 - 可安全套用的修正使用 `MachineApplicable` suggestion，由 `cargo dylint --fix` 套用；不自行寫檔或呼叫 rustfmt。
 
 ### 完成進度

@@ -104,7 +104,7 @@ struct Value(u32);
 
 - 無法確認所有項目均為支援之 derive 時，略過該列表，不猜測巨集來源，也不排序剩餘的已知子區段。
 - 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
-- 允許 `cfg`、lint levels（`allow`／`warn`／`deny`／`forbid`／`expect`）、`doc`、`deprecated`、`must_use`、`non_exhaustive` 與 `repr` attributes。定義自身的 `serde`、`is_empty`、`strum` helper attributes，須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。未知 attributes、外層 helper 同名 attributes 及 `cfg_attr` 仍只診斷、不修正，避免改變 attribute macro 的輸入。
+- 允許 `cfg`、lint levels（`allow`／`warn`／`deny`／`forbid`／`expect`）、`doc`、`deprecated`、`must_use`、`non_exhaustive` 與 `repr` attributes。定義自身的 `serde`、`is_empty`、`strum` helper attributes，須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。`cfg_attr` 內含 attributes 全部為安全內建項目時可修正；未知 attributes 與外層 helper 同名 attributes 仍只診斷、不修正，避免改變 attribute macro 的輸入。
 - 無法編譯或無法可靠對應原文與 compiler expansion 的程式碼，不保證能產生本規則的診斷。
 
 ## Auto-fix

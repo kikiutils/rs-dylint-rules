@@ -11,8 +11,9 @@
 | `src/lib.rs` | 提供 Dylint ABI 入口，註冊所有規則。 |
 | `src/rules/mod.rs` | 維護規則註冊函式列表 `RULES`。 |
 | `src/rules/<rule>/` | 每條規則一個目錄，負責語意收集、檢查、診斷及修正提案。 |
-| `src/source.rs` | 驗證來源、解析原文 CST，轉換 rustc spans 與磁碟原文位元組偏移。路徑與檔案讀取統一使用 pathkit。 |
-| `src/diagnostic.rs` | 定義規則內部的 `RuleOutput`、`Issue`、`Diagnostic`、`Fix` 與 `Edit`。 |
+| `src/source.rs` | 記錄 module 來源與共用檔案實例，驗證來源、解析原文 CST，轉換 rustc spans 與磁碟原文位元組偏移。路徑與檔案讀取統一使用 pathkit。 |
+| `src/diagnostic.rs` | 定義規則內部的診斷與修正資料，統一發出原生 lint 診斷。 |
+| `src/syntax.rs` | 共用 attributes、條件邊界與註解判斷；規則各自保留搬移、拆分與 derive helpers 的額外限制。 |
 | `tests/` | 驗證實際 Dylint 診斷、lint 層級及 `--fix` 行為。 |
 
 ## 規則註冊
@@ -42,7 +43,7 @@ pub(super) const RULE: fn(&mut rustc_lint::LintStore) = self::compiler::register
 - 分析會執行 build scripts 與 proc macros，Cargo 也可能更新 lockfile；只對可信任專案執行。
 - 目標專案須具備所選 target 的標準函式庫、原生依賴與 SDK；編譯失敗時，不保證能產生完整規則診斷。
 - 不檢查當次未啟用的程式碼，也不保證修正在其他 target 或 feature 組合下相容。
-- `include!` 的實體來源目前須能解析為 Rust item source file。
+- 僅分析登記為 module 原始來源的檔案，略過獨立 `include!` 片段。同一實體來源被載入成多個 module 時仍提供診斷，但不自動修正，避免改變其他實例的解析結果。
 - 不執行 rustfmt 或 Clippy。`--fix` 使用標準 Cargo fix 流程，可能同時套用 rustc 的其他修正建議，並非只限本規則。
 
 ## 上游參考

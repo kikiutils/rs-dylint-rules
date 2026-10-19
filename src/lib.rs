@@ -10,6 +10,7 @@ extern crate rustc_span;
 mod diagnostic;
 mod rules;
 mod source;
+mod syntax;
 
 // Match the compiler ABI; Dylint supplies and owns the actual driver.
 dylint_linting::dylint_library!();

@@ -36,3 +36,49 @@ impl RuleOutput {
         });
     }
 }
+
+impl Issue {
+    pub(crate) fn emit(
+        &self,
+        cx: &rustc_lint::LateContext<'_>,
+        lint: &'static rustc_lint_defs::Lint,
+        id: rustc_hir::HirId,
+        source: &crate::source::Source,
+        help: &'static str,
+        can_fix: bool,
+    ) {
+        let diagnostic = &self.diagnostics[0];
+        cx.tcx.emit_node_span_lint(
+            lint,
+            id,
+            source.span(diagnostic.range),
+            rustc_errors::DiagDecorator(|diag| {
+                diag.primary_message(diagnostic.message.clone());
+                for other in self.diagnostics.iter().skip(1) {
+                    diag.span_label(source.span(other.range), other.message.clone());
+                }
+                if let Some(fix) = self.fix.as_ref().filter(|_| can_fix) {
+                    diag.multipart_suggestion(
+                        help,
+                        fix.edits
+                            .iter()
+                            .map(|edit| (source.span(edit.range), edit.replacement.clone()))
+                            .collect(),
+                        rustc_errors::Applicability::MachineApplicable,
+                    );
+                }
+            }),
+        );
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn apply_edits<'a>(source: &str, edits: impl Iterator<Item = &'a Edit>) -> String {
+    let mut edits: Vec<_> = edits.collect();
+    edits.sort_by_key(|edit| std::cmp::Reverse(edit.range.start()));
+    let mut fixed = source.to_owned();
+    for edit in edits {
+        fixed.replace_range(std::ops::Range::<usize>::from(edit.range), &edit.replacement);
+    }
+    fixed
+}

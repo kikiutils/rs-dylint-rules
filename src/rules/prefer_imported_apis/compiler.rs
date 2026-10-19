@@ -5,10 +5,6 @@ use std::collections::{
 
 use pathkit::Path;
 use ra_ap_syntax::AstNode;
-use rustc_errors::{
-    Applicability,
-    DiagDecorator,
-};
 use rustc_hir::{
     self as hir,
     def::{
@@ -58,7 +54,7 @@ pub(super) fn register(store: &mut rustc_lint::LintStore) {
 #[derive(Default)]
 struct PreferImportedApis {
     files: BTreeMap<(Path, u32), FileFacts>,
-    module_sources: BTreeSet<(Path, u32)>,
+    sources: crate::source::ModuleSources,
     local_macros: BTreeSet<String>,
 }
 
@@ -179,10 +175,11 @@ impl_lint_pass!(PreferImportedApis => [KIKI_PREFER_IMPORTED_APIS]);
 
 impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
     fn check_mod(&mut self, cx: &LateContext<'tcx>, module: &'tcx hir::Mod<'tcx>, id: LocalModId) {
-        if let Some((path, _)) = crate::source::locate(cx, module.spans.inner_span) {
-            self.module_sources
-                .insert((path, id.to_local_def_id().local_def_index.as_u32()));
-        }
+        self.sources.record(
+            cx,
+            module.spans.inner_span,
+            id.to_local_def_id().local_def_index.as_u32(),
+        );
     }
 
     fn check_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx hir::Item<'tcx>) {
@@ -247,7 +244,7 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
         for (key @ (path, _), facts) in &self.files {
             // include! may provide a Rust expression rather than an item source
             // file. Only analyze the module's own physical source in this rule.
-            if !self.module_sources.contains(key) {
+            if !self.sources.contains(path, key.1) {
                 continue;
             }
             let source = match crate::source::Source::load(cx, path, facts.anchor) {
@@ -270,26 +267,13 @@ impl<'tcx> LateLintPass<'tcx> for PreferImportedApis {
                 }) else {
                     continue;
                 };
-                cx.tcx.emit_node_span_lint(
+                issue.emit(
+                    cx,
                     KIKI_PREFER_IMPORTED_APIS,
                     id,
-                    source.span(diagnostic.range),
-                    DiagDecorator(|diag| {
-                        diag.primary_message(diagnostic.message.clone());
-                        for other in issue.diagnostics.iter().skip(1) {
-                            diag.span_label(source.span(other.range), other.message.clone());
-                        }
-                        if let Some(fix) = &issue.fix {
-                            diag.multipart_suggestion(
-                                "import the API and use its prescribed name",
-                                fix.edits
-                                    .iter()
-                                    .map(|edit| (source.span(edit.range), edit.replacement.clone()))
-                                    .collect(),
-                                Applicability::MachineApplicable,
-                            );
-                        }
-                    }),
+                    &source,
+                    "import the API and use its prescribed name",
+                    self.sources.can_fix(path),
                 );
             }
         }

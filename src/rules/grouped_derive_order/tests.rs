@@ -17,31 +17,34 @@ fn check(source: &str) -> RuleOutput {
 }
 
 fn apply(source: &str, output: &RuleOutput) -> String {
-    let mut edits: Vec<_> = output
-        .issues
-        .iter()
-        .filter_map(|issue| issue.fix.as_ref())
-        .flat_map(|fix| &fix.edits)
-        .collect();
-    edits.sort_by_key(|edit| std::cmp::Reverse(edit.range.start()));
-    let mut fixed = source.to_owned();
-    for edit in edits {
-        fixed.replace_range(std::ops::Range::<usize>::from(edit.range), &edit.replacement);
-    }
-    fixed
+    crate::diagnostic::apply_edits(
+        source,
+        output
+            .issues
+            .iter()
+            .filter_map(|issue| issue.fix.as_ref())
+            .flat_map(|fix| &fix.edits),
+    )
 }
 
 #[test]
 fn groups_builtin_derives_and_is_idempotent() {
-    let source = "#[derive(Hash, Ord, Eq, Copy, PartialOrd, Default, Clone, Debug, PartialEq)]\nstruct Value;\n";
-    let output = check(source);
-    assert_eq!(output.issues.len(), 1);
-    let fixed = apply(source, &output);
-    assert_eq!(
-        fixed,
-        "#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]\nstruct Value;\n"
-    );
-    assert!(check(&fixed).issues.is_empty(), "{:?}", check(&fixed));
+    for (source, expected) in [
+        (
+            "#[derive(Hash, Ord, Eq, Copy, PartialOrd, Default, Clone, Debug, PartialEq)]\nstruct Value;\n",
+            "#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]\nstruct Value;\n",
+        ),
+        (
+            "#[derive(Deserialize, Hash, Serialize, Eq, PartialEq, Debug)]\nstruct Value;\n",
+            "#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]\nstruct Value;\n",
+        ),
+    ] {
+        let output = check(source);
+        assert_eq!(output.issues.len(), 1);
+        let fixed = apply(source, &output);
+        assert_eq!(fixed, expected);
+        assert!(check(&fixed).issues.is_empty(), "{:?}", check(&fixed));
+    }
 }
 
 #[test]
@@ -93,15 +96,6 @@ fn preserves_path_spelling_trailing_comma_and_raw_crlf_offsets() {
     assert_eq!(
         apply(source, &output),
         "const LABEL: &str = \"型別\";\r\n#[derive(core::cmp::PartialEq, core::cmp::Eq,)]\r\nstruct Value;\r\n"
-    );
-}
-
-#[test]
-fn serialization_group_follows_builtins_and_keeps_its_own_fixed_order() {
-    let source = "#[derive(Deserialize, Hash, Serialize, Eq, PartialEq, Debug)]\nstruct Value;\n";
-    assert_eq!(
-        apply(source, &check(source)),
-        "#[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]\nstruct Value;\n"
     );
 }
 

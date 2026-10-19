@@ -10,42 +10,16 @@ use pathkit::{
 };
 use tempfile::TempDir;
 
-fn fixture(source: &str) -> Result<TempDir> {
-    let directory = tempfile::tempdir()?;
-    (path!(directory.path()) / "src").create_dir_sync()?;
-    (path!(directory.path()) / "Cargo.toml")
-        .write_sync("[package]\nname=\"derive-fixture\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[workspace]\n")?;
-    (path!(directory.path()) / "src" / "lib.rs").write_sync(source)?;
-    Ok(directory)
-}
+mod support;
+
+use self::support::fixture;
 
 fn run(directory: &TempDir, fix: bool) -> Result<Output> {
-    let mut command = Command::new("cargo");
-    command
-        .current_dir(directory.path())
-        .env("DYLINT_RUSTFLAGS", "-A unused")
-        .args([
-            "+nightly-2026-10-01",
-            "dylint",
-            "--path",
-            env!("CARGO_MANIFEST_DIR"),
-            "--fail-on-no-libraries",
-        ]);
-    if fix {
-        command.arg("--fix");
-    }
-    command.args(["--", "--lib", "--quiet", "--message-format=json"]);
-    if fix {
-        command.args(["--allow-no-vcs", "--allow-dirty"]);
-    }
-    Ok(command.output()?)
+    support::run(directory, fix, "kiki_grouped_derive_order")
 }
 
 fn has_lint(output: &Output) -> bool {
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .any(|message| message["message"]["code"]["code"] == "kiki_grouped_derive_order")
+    !support::diagnostics(output, "kiki_grouped_derive_order").is_empty()
 }
 
 #[test]
@@ -116,7 +90,8 @@ fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> Result<()> 
         assert!(output.status.success(), "{output:?}");
         let behavior = Command::new("cargo")
             .current_dir(directory.path())
-            .args(["+nightly-2026-10-01", "test", "--lib", "--quiet"])
+            .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
+            .args(["test", "--lib", "--quiet"])
             .output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }
@@ -144,16 +119,18 @@ fn shared_source_module_instances_keep_their_own_lint_levels() -> Result<()> {
 
 #[test]
 fn serde_aliases_and_qualified_paths_sort_and_preserve_roundtrip_behavior() -> Result<()> {
-    let source = r##"use serde as renamed;
+    let source = r##"#![allow(dead_code)]
 use renamed::{Deserialize as Decode, Serialize as Encode};
 #[derive(Decode, Eq, Encode, Debug, PartialEq)]
-pub struct Value { pub number: u32 }
+#[serde(crate = "renamed", rename_all = "camelCase")]
+pub struct Value { pub some_number: u32 }
 #[derive(renamed::Deserialize, renamed::Serialize)]
+#[serde(crate = "renamed")]
 pub enum State { Ready, Value(u32) }
 #[test] fn roundtrip() {
-    let value = Value { number: 7 };
+    let value = Value { some_number: 7 };
     let json = serde_json::to_string(&value).unwrap();
-    assert_eq!(json, r#"{"number":7}"#);
+    assert_eq!(json, r#"{"someNumber":7}"#);
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap(), value);
     let state = serde_json::to_string(&State::Value(9)).unwrap();
     assert_eq!(serde_json::to_string(&serde_json::from_str::<State>(&state).unwrap()).unwrap(), state);
@@ -163,7 +140,7 @@ pub enum State { Ready, Value(u32) }
     let manifest = path!(directory.path()) / "Cargo.toml";
     let text = manifest.read_to_string_sync()?;
     manifest.write_sync(format!(
-        "{text}\n[dependencies]\nserde={{version=\"=1.0.229\", features=[\"derive\"]}}\nserde_json=\"=1.0.154\"\n"
+        "{text}\n[dependencies]\nrenamed={{package=\"serde\",version=\"=1.0.229\", features=[\"derive\"]}}\nserde_json=\"=1.0.154\"\n"
     ))?;
     let file = path!(directory.path()) / "src" / "lib.rs";
     for fix in [false, true] {
@@ -174,7 +151,8 @@ pub enum State { Ready, Value(u32) }
         }
         let behavior = Command::new("cargo")
             .current_dir(directory.path())
-            .args(["+nightly-2026-10-01", "test", "--lib", "--quiet"])
+            .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
+            .args(["test", "--lib", "--quiet"])
             .output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }
@@ -189,37 +167,6 @@ pub enum State { Ready, Value(u32) }
                 "renamed::Deserialize, renamed::Serialize",
                 "renamed::Serialize, renamed::Deserialize"
             )
-    );
-    let output = run(&directory, false)?;
-    assert!(output.status.success(), "{output:?}");
-    assert!(!has_lint(&output), "{output:?}");
-    Ok(())
-}
-
-#[test]
-fn renamed_serde_dependency_with_helper_attributes_is_fixed() -> Result<()> {
-    let source = r#"#![allow(dead_code)]
-#[cfg(all())]
-mod nested {
-#[derive(renamed::Deserialize, renamed::Serialize)]
-#[serde(crate = "renamed", rename_all = "camelCase")]
-pub struct Value { pub some_field: u32 }
-}
-"#;
-    let directory = fixture(source)?;
-    let manifest = path!(directory.path()) / "Cargo.toml";
-    let text = manifest.read_to_string_sync()?;
-    manifest.write_sync(format!(
-        "{text}\n[dependencies]\nrenamed={{package=\"serde\", version=\"=1.0.229\", features=[\"derive\"]}}\n"
-    ))?;
-    let output = run(&directory, true)?;
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
-        source.replace(
-            "renamed::Deserialize, renamed::Serialize",
-            "renamed::Serialize, renamed::Deserialize"
-        )
     );
     let output = run(&directory, false)?;
     assert!(output.status.success(), "{output:?}");
@@ -268,7 +215,8 @@ pub enum State { Ready, Done }
         }
         let behavior = Command::new("cargo")
             .current_dir(directory.path())
-            .args(["+nightly-2026-10-01", "test", "--lib", "--quiet"])
+            .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
+            .args(["test", "--lib", "--quiet"])
             .output()?;
         assert!(behavior.status.success(), "{behavior:?}");
     }

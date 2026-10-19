@@ -43,13 +43,7 @@ impl From<RuleOutput> for Analysis {
 
 impl Analysis {
     fn apply(&self, source: &str) -> String {
-        let mut output = source.to_owned();
-        let mut edits: Vec<_> = self.edits.iter().collect();
-        edits.sort_by_key(|edit| std::cmp::Reverse(edit.range.start()));
-        for edit in edits {
-            output.replace_range(std::ops::Range::<usize>::from(edit.range), &edit.replacement);
-        }
-        output
+        crate::diagnostic::apply_edits(source, self.edits.iter())
     }
 }
 
@@ -92,6 +86,7 @@ fn leaves_valid_groups_and_rustfmt_internal_order_unchanged() {
     for source in [
         "use std::io;\nuse tokio::spawn;\nmod child;\nuse crate::A;\nuse self::B;\nuse super::C;\n",
         "use crate::A;\n",
+        "use crate::A;\nmod inline {}\n",
         "mod child;\n",
         "use crate::A;\nuse self::B;\n",
         "use tokio::spawn;\nuse std::io;\n",
@@ -154,17 +149,12 @@ fn checks_nested_scopes_independently() {
 }
 
 #[test]
-fn inline_module_is_not_an_external_module_declaration() {
-    let source = "use crate::A;\nmod inline {}\n";
-    let analysis = check(source);
-    assert_eq!(analysis.edits, Vec::new());
-    assert_eq!(analysis.diagnostics, Vec::new());
-}
-
-#[test]
 fn keeps_comments_attributes_and_documentation_untouched() {
     for source in [
         "// local import\nuse crate::A;\nuse std::io;\n",
+        "pub use crate::A;\n// attached\npub use std::fmt;\n",
+        "#[allow(unused)]\npub(crate) use crate::A;\npub use std::fmt;\n",
+        "pub use {crate::A, std::fmt};\n",
         "use crate::A; // local import\nuse std::io;\n",
         "use crate::A;\nuse std::io; // external import\n",
         "/// local import\nuse crate::A;\nuse std::io;\n",
@@ -251,20 +241,6 @@ fn all_import_visibilities_follow_source_groups_and_preserve_tokens() {
         assert_eq!(analysis.edits.len(), 1);
         assert_eq!(analysis.apply(&source), expected);
         assert_eq!(check(&expected).edits, Vec::new());
-    }
-}
-
-#[test]
-fn visible_imports_keep_comment_attribute_and_mixed_source_safety_checks() {
-    for source in [
-        "pub use crate::A;\n// attached\npub use std::fmt;\n",
-        "#[allow(unused)]\npub(crate) use crate::A;\npub use std::fmt;\n",
-        "pub use {crate::A, std::fmt};\n",
-    ] {
-        let analysis = check(source);
-        assert!(!analysis.diagnostics.is_empty(), "{source}");
-        assert_eq!(analysis.edits, Vec::new());
-        assert_eq!(analysis.apply(source), source);
     }
 }
 

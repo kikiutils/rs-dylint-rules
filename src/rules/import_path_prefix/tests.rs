@@ -149,6 +149,8 @@ fn split_preserves_visibility_attributes_aliases_and_globs() {
     for source in [
         "use crate::{a::Value, /* keep */ b::Other};",
         "#[observe] use crate::{a::Value, b::Other};",
+        "#[expect(unused_imports)] use crate::{a::Value, b::Other};",
+        "#[cfg_attr(all(), expect(unused_imports))] use crate::{a::Value, b::Other};",
     ] {
         let parsed = SourceFile::parse(source, Edition::Edition2024);
         let segments = self::segments(source, &["crate", "a", "Value"]);

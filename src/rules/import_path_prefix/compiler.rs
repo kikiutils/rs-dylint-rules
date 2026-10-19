@@ -46,6 +46,7 @@ pub(super) fn register(store: &mut rustc_lint::LintStore) {
 #[derive(Default)]
 struct ImportPathPrefix {
     files: BTreeMap<(Path, u32), FileFacts>,
+    sources: crate::source::ModuleSources,
 }
 
 struct FileFacts {
@@ -176,6 +177,14 @@ impl ImportPathPrefix {
 }
 
 impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
+    fn check_mod(&mut self, cx: &LateContext<'tcx>, module: &'tcx hir::Mod<'tcx>, id: rustc_span::def_id::LocalModId) {
+        self.sources.record(
+            cx,
+            module.spans.inner_span,
+            id.to_local_def_id().local_def_index.as_u32(),
+        );
+    }
+
     fn check_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx hir::Item<'tcx>) {
         if let hir::ItemKind::Use(tree) = item.kind {
             self.import(cx, &tree, item.hir_id(), &[]);
@@ -183,7 +192,10 @@ impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
     }
 
     fn check_crate_post(&mut self, cx: &LateContext<'tcx>) {
-        for ((path, _), facts) in &self.files {
+        for ((path, module), facts) in &self.files {
+            if !self.sources.contains(path, *module) {
+                continue;
+            }
             let source = match crate::source::Source::load(cx, path, facts.anchor) {
                 Ok(source) => source,
                 Err(error) => {
@@ -233,6 +245,7 @@ impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
                     split_ranges.push(split.range);
                     Some(split)
                 });
+                let edit = edit.filter(|_| self.sources.can_fix(path));
                 cx.tcx.emit_node_span_lint(
                     KIKI_IMPORT_PATH_PREFIX,
                     import.id,

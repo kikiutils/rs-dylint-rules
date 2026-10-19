@@ -5,7 +5,10 @@ use ra_ap_syntax::{
     ast,
 };
 
-use crate::diagnostic::Edit;
+use crate::{
+    diagnostic::Edit,
+    syntax,
+};
 
 #[derive(Debug, Clone)]
 pub(super) struct Segment {
@@ -60,11 +63,7 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
         .descendants()
         .filter_map(ast::Use::cast)
         .find(|item| item.syntax().text_range().contains_range(segments[0].range))?;
-    if import.syntax().ancestors().any(|node| {
-        node.children()
-            .filter_map(ast::Attr::cast)
-            .any(|attr| !safe_attribute(&attr))
-    }) {
+    if syntax::protected(import.syntax()) {
         return None;
     }
     // Replacements may span multiple segments only when they are a contiguous
@@ -92,34 +91,6 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
     })
 }
 
-// cfg_attr is safe only when every potentially enabled attribute is safe.
-fn safe_attribute(attribute: &ast::Attr) -> bool {
-    attribute.meta().is_some_and(safe_meta)
-}
-
-fn safe_meta(meta: ast::Meta) -> bool {
-    if let ast::Meta::CfgAttrMeta(meta) = meta {
-        return meta.metas().all(safe_meta);
-    }
-    meta.simple_name().is_some_and(|name| {
-        matches!(
-            name.as_str(),
-            "cfg"
-                | "allow"
-                | "warn"
-                | "deny"
-                | "forbid"
-                | "expect"
-                | "doc"
-                | "deprecated"
-                | "must_use"
-                | "non_exhaustive"
-                | "repr"
-                | "path"
-        )
-    })
-}
-
 // Rebuild comment-free branches independently, applying compiler-confirmed
 // prefix plans while preserving all other import routes.
 pub(super) fn split_import(root: &SyntaxNode, segments: &[Segment], plans: &[(&[Segment], &Plan)]) -> Option<Edit> {
@@ -128,16 +99,15 @@ pub(super) fn split_import(root: &SyntaxNode, segments: &[Segment], plans: &[(&[
         .descendants()
         .filter_map(ast::Use::cast)
         .find(|item| item.syntax().text_range().contains_range(first.range))?;
-    if import.syntax().ancestors().any(|node| {
-        node.children()
+    if syntax::protected(import.syntax())
+        || syntax::has_comments(import.syntax(), import.syntax().text_range())
+        || import
+            .syntax()
+            .children()
             .filter_map(ast::Attr::cast)
-            .any(|attr| !safe_attribute(&attr))
-    }) || import.syntax().descendants_with_tokens().any(|element| {
-        matches!(
-            element.kind(),
-            ra_ap_syntax::SyntaxKind::COMMENT | ra_ap_syntax::SyntaxKind::DOC_COMMENT
-        )
-    }) {
+            .filter_map(|attr| attr.meta())
+            .any(syntax::has_expectation)
+    {
         return None;
     }
     let tree = import.use_tree()?;

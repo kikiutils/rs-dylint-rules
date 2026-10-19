@@ -10,12 +10,10 @@ use pathkit::{
 };
 use tempfile::TempDir;
 
+mod support;
+
 fn fixture(source: &str) -> Result<TempDir> {
-    let directory = tempfile::tempdir()?;
-    (path!(directory.path()) / "src").create_dir_sync()?;
-    (path!(directory.path()) / "Cargo.toml")
-        .write_sync("[package]\nname=\"api-fixture\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[workspace]\n")?;
-    (path!(directory.path()) / "src" / "lib.rs").write_sync(source)?;
+    let directory = support::fixture(source)?;
     let manifest = path!(directory.path()) / "Cargo.toml";
     let text = manifest.read_to_string_sync()?;
     manifest.write_sync(format!("{text}\n[dependencies]\nanyhow=\"=1.0.104\"\n"))?;
@@ -23,36 +21,11 @@ fn fixture(source: &str) -> Result<TempDir> {
 }
 
 fn run(directory: &TempDir, fix: bool) -> Result<Output> {
-    let mut command = Command::new("cargo");
-    command
-        .env(
-            "DYLINT_RUSTFLAGS",
-            "-A unused -A kiki_import_module_order -A kiki_import_path_prefix",
-        )
-        .current_dir(directory.path())
-        .args([
-            "+nightly-2026-10-01",
-            "dylint",
-            "--path",
-            env!("CARGO_MANIFEST_DIR"),
-            "--fail-on-no-libraries",
-        ]);
-    if fix {
-        command.arg("--fix");
-    }
-    command.args(["--", "--lib", "--message-format=json", "--quiet"]);
-    if fix {
-        command.args(["--allow-no-vcs", "--allow-dirty"]);
-    }
-    Ok(command.output()?)
+    support::run(directory, fix, "kiki_prefer_imported_apis")
 }
 
 fn diagnostics(output: &Output) -> Vec<serde_json::Value> {
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .filter(|message| message["message"]["code"]["code"] == "kiki_prefer_imported_apis")
-        .collect()
+    support::diagnostics(output, "kiki_prefer_imported_apis")
 }
 
 #[test]
@@ -76,7 +49,11 @@ pub fn run(valid: bool) -> anyhow::Result<()> {
     assert!(output.status.success(), "{output:?}");
     let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
     assert!(fixed.contains("-> AnyhowResult<()>"), "{fixed}");
-    assert!(fixed.contains("use anyhow::Error as AnyhowError;"), "{fixed}");
+    assert!(
+        fixed.contains("use anyhow::Error as AnyhowError;"),
+        "{fixed}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
     assert!(fixed.contains("AnyhowError::msg("), "{fixed}");
     assert!(fixed.contains("use anyhow::ensure;"), "{fixed}");
     assert!(fixed.contains("ensure!(valid"), "{fixed}");
@@ -87,7 +64,8 @@ pub fn run(valid: bool) -> anyhow::Result<()> {
     assert!(diagnostics(&output).is_empty(), "{output:?}");
     let output = Command::new("cargo")
         .current_dir(directory.path())
-        .args(["+nightly-2026-10-01", "test", "--lib", "--quiet"])
+        .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
+        .args(["test", "--lib", "--quiet"])
         .output()?;
     assert!(output.status.success(), "{output:?}");
     Ok(())
@@ -163,7 +141,8 @@ mod conflict {
     ))?;
     let output = Command::new("cargo")
         .current_dir(directory.path())
-        .args(["+nightly-2026-10-01", "test", "--lib", "--quiet"])
+        .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
+        .args(["test", "--lib", "--quiet"])
         .output()?;
     assert!(output.status.success(), "{output:?}");
     Ok(())
@@ -385,5 +364,74 @@ mod conditional_missing {
         (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
         fixed
     );
+    Ok(())
+}
+
+#[test]
+fn import_targets_keep_routes_conditions_and_preambles_independent() -> Result<()> {
+    let source = r#"mod mixed {
+    use anyhow::{Result};
+    fn error() -> anyhow::Error { anyhow::anyhow!("mixed") }
+}
+mod routes {
+    mod facade { pub use anyhow::{anyhow, Result}; }
+    use facade::{Result};
+    use anyhow::{bail};
+    fn run() -> Result<()> {
+        let _ = facade::anyhow!("facade");
+        let _ = anyhow::anyhow!("direct route to same macro");
+        anyhow::ensure!(true, "direct");
+        Ok(())
+    }
+}
+mod static_context {
+    static ERROR: std::sync::LazyLock<anyhow::Error> = std::sync::LazyLock::new(|| anyhow::anyhow!("static"));
+    use anyhow::{bail};
+    fn run() { let _ = anyhow::anyhow!("function"); }
+}
+mod documented {
+    //! Module documentation must stay before inserted items.
+    fn run() -> anyhow::Result<()> { Ok(()) }
+}
+mod conditional {
+    #[cfg(feature = "conditional")]
+    use anyhow::anyhow;
+    fn run() { let _ = anyhow::anyhow!("conditional import"); }
+}
+"#;
+    let directory = fixture(source)?;
+    let manifest = path!(directory.path()) / "Cargo.toml";
+    manifest.write_sync(format!(
+        "{}\n[features]\ndefault=[\"conditional\"]\nconditional=[]\n",
+        manifest.read_to_string_sync()?
+    ))?;
+    let output = run(&directory, true)?;
+    assert!(output.status.success(), "{output:?}");
+    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    assert!(
+        fixed.contains("use anyhow::Error as AnyhowError;"),
+        "{fixed}\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(fixed.contains("use anyhow::{Result, anyhow};"), "{fixed}");
+    assert!(fixed.contains("use facade::{Result, anyhow};"), "{fixed}");
+    assert!(fixed.contains("use anyhow::{bail, ensure};"), "{fixed}");
+    assert!(fixed.contains("fn run() -> anyhow::Result<()> { Ok(()) }"), "{fixed}");
+    assert!(fixed.contains("anyhow::anyhow!(\"conditional import\")"), "{fixed}");
+    let static_module = fixed
+        .split("mod static_context")
+        .nth(1)
+        .and_then(|text| text.split("mod documented").next());
+    assert_eq!(
+        static_module.map(|text| text.matches("use anyhow::anyhow;").count()),
+        Some(1),
+        "{fixed}"
+    );
+    let output = std::process::Command::new("cargo")
+        .current_dir(directory.path())
+        .env("RUSTUP_TOOLCHAIN", env!("RUSTUP_TOOLCHAIN"))
+        .args(["check", "--no-default-features", "--quiet"])
+        .output()?;
+    assert!(output.status.success(), "{output:?}");
     Ok(())
 }

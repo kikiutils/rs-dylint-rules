@@ -5,10 +5,6 @@ use ra_ap_syntax::{
     AstNode,
     TextRange,
 };
-use rustc_errors::{
-    Applicability,
-    DiagDecorator,
-};
 use rustc_hir as hir;
 use rustc_lint::{
     LateContext,
@@ -39,6 +35,7 @@ pub(super) fn register(store: &mut rustc_lint::LintStore) {
 #[derive(Default)]
 struct GroupedDeriveOrder {
     files: BTreeMap<(Path, u32), FileFacts>,
+    sources: crate::source::ModuleSources,
 }
 
 struct FileFacts {
@@ -49,6 +46,14 @@ struct FileFacts {
 impl_lint_pass!(GroupedDeriveOrder => [KIKI_GROUPED_DERIVE_ORDER]);
 
 impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
+    fn check_mod(&mut self, cx: &LateContext<'tcx>, module: &'tcx hir::Mod<'tcx>, id: rustc_span::def_id::LocalModId) {
+        self.sources.record(
+            cx,
+            module.spans.inner_span,
+            id.to_local_def_id().local_def_index.as_u32(),
+        );
+    }
+
     fn check_item(&mut self, cx: &LateContext<'tcx>, item: &'tcx hir::Item<'tcx>) {
         if !matches!(item.kind, hir::ItemKind::Impl(_)) {
             return;
@@ -121,7 +126,10 @@ impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
     }
 
     fn check_crate_post(&mut self, cx: &LateContext<'tcx>) {
-        for ((path, _), facts) in &self.files {
+        for ((path, module), facts) in &self.files {
+            if !self.sources.contains(path, *module) {
+                continue;
+            }
             let source = match crate::source::Source::load(cx, path, facts.anchor) {
                 Ok(source) => source,
                 Err(error) => {
@@ -145,23 +153,13 @@ impl<'tcx> LateLintPass<'tcx> for GroupedDeriveOrder {
                 }) else {
                     continue;
                 };
-                cx.tcx.emit_node_span_lint(
+                issue.emit(
+                    cx,
                     KIKI_GROUPED_DERIVE_ORDER,
                     id,
-                    source.span(diagnostic.range),
-                    DiagDecorator(|diag| {
-                        diag.primary_message(diagnostic.message.clone());
-                        if let Some(fix) = issue.fix {
-                            diag.multipart_suggestion(
-                                "reorder this derive list",
-                                fix.edits
-                                    .into_iter()
-                                    .map(|edit| (source.span(edit.range), edit.replacement))
-                                    .collect(),
-                                Applicability::MachineApplicable,
-                            );
-                        }
-                    }),
+                    &source,
+                    "reorder this derive list",
+                    self.sources.can_fix(path),
                 );
             }
         }

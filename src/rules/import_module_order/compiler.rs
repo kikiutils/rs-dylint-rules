@@ -10,10 +10,6 @@ use ra_ap_syntax::{
         HasName,
     },
 };
-use rustc_errors::{
-    Applicability,
-    DiagDecorator,
-};
 use rustc_hir::{
     self as hir,
     def::Res,
@@ -45,6 +41,7 @@ pub(super) fn register(store: &mut rustc_lint::LintStore) {
 #[derive(Default)]
 struct ImportModuleOrder {
     files: BTreeMap<(Path, u32), FileFacts>,
+    sources: crate::source::ModuleSources,
 }
 
 struct FileFacts {
@@ -139,6 +136,11 @@ impl_lint_pass!(ImportModuleOrder => [KIKI_IMPORT_MODULE_ORDER]);
 
 impl<'tcx> LateLintPass<'tcx> for ImportModuleOrder {
     fn check_mod(&mut self, cx: &LateContext<'tcx>, module: &'tcx hir::Mod<'tcx>, id: LocalModId) {
+        self.sources.record(
+            cx,
+            module.spans.inner_span,
+            id.to_local_def_id().local_def_index.as_u32(),
+        );
         self.file(cx, module.spans.inner_span, id);
     }
 
@@ -155,7 +157,10 @@ impl<'tcx> LateLintPass<'tcx> for ImportModuleOrder {
     }
 
     fn check_crate_post(&mut self, cx: &LateContext<'tcx>) {
-        for ((path, _), facts) in &self.files {
+        for ((path, module), facts) in &self.files {
+            if !self.sources.contains(path, *module) {
+                continue;
+            }
             let source = match crate::source::Source::load(cx, path, facts.anchor) {
                 Ok(source) => source,
                 Err(error) => {
@@ -175,7 +180,7 @@ impl<'tcx> LateLintPass<'tcx> for ImportModuleOrder {
                 },
                 &|node| facts.active(node),
             );
-            emit_diagnostics(cx, facts, &source, &output);
+            emit_diagnostics(cx, facts, &source, &output, self.sources.can_fix(path));
         }
     }
 }
@@ -189,6 +194,7 @@ fn emit_diagnostics(
     facts: &FileFacts,
     source: &crate::source::Source,
     output: &crate::diagnostic::RuleOutput,
+    can_fix: bool,
 ) {
     for issue in &output.issues {
         let diagnostic = &issue.diagnostics[0];
@@ -203,26 +209,13 @@ fn emit_diagnostics(
                     .find_map(|(range, id)| diagnostic.range.contains_range(*range).then_some(*id))
             })
             .unwrap_or(hir::CRATE_HIR_ID);
-        cx.tcx.emit_node_span_lint(
+        issue.emit(
+            cx,
             KIKI_IMPORT_MODULE_ORDER,
             id,
-            source.span(diagnostic.range),
-            DiagDecorator(|diag| {
-                diag.primary_message(diagnostic.message.clone());
-                for other in issue.diagnostics.iter().skip(1) {
-                    diag.span_label(source.span(other.range), other.message.clone());
-                }
-                if let Some(fix) = &issue.fix {
-                    diag.multipart_suggestion(
-                        "reorder import/module sections",
-                        fix.edits
-                            .iter()
-                            .map(|edit| (source.span(edit.range), edit.replacement.clone()))
-                            .collect(),
-                        Applicability::MachineApplicable,
-                    );
-                }
-            }),
+            source,
+            "reorder import/module sections",
+            can_fix,
         );
     }
 }

@@ -12,11 +12,19 @@ use ra_ap_syntax::{
 };
 
 use super::Api;
-use crate::diagnostic::{
-    Diagnostic,
-    Edit,
-    Fix,
-    RuleOutput,
+use crate::{
+    diagnostic::{
+        Diagnostic,
+        Edit,
+        Fix,
+        RuleOutput,
+    },
+    syntax::{
+        self,
+        has_comments,
+        inert_attribute,
+        protected,
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -46,9 +54,44 @@ struct Access {
     api: Api,
     range: TextRange,
     node: SyntaxNode,
-    scope: SyntaxNode,
+    target: ImportTarget,
     qualified: bool,
-    merge: Option<ast::UseTree>,
+}
+
+type FixGroups<'a> = BTreeMap<(bool, u32, u32), Vec<(usize, &'a Access)>>;
+
+// The edit destination is part of the batching key, not incidental access state.
+#[derive(Clone)]
+enum ImportTarget {
+    Scope(SyntaxNode),
+    Group { tree: ast::UseTree, scope: SyntaxNode },
+}
+
+impl ImportTarget {
+    fn scope(&self) -> SyntaxNode {
+        match self {
+            Self::Scope(node) => node.clone(),
+            Self::Group { scope, .. } => scope.clone(),
+        }
+    }
+
+    fn key(&self) -> (bool, u32, u32) {
+        let (group, node) = match self {
+            Self::Scope(node) => (false, node),
+            Self::Group { tree, .. } => (true, tree.syntax()),
+        };
+        let range = node.text_range();
+        (group, range.start().into(), range.end().into())
+    }
+}
+
+fn conditional_import(import: &Import) -> bool {
+    import.tree.syntax().ancestors().filter_map(ast::Use::cast).any(|item| {
+        item.syntax()
+            .children()
+            .filter_map(ast::Attr::cast)
+            .any(|attr| syntax::conditional_attribute(&attr))
+    })
 }
 
 fn scope(node: &SyntaxNode) -> Option<SyntaxNode> {
@@ -77,40 +120,8 @@ fn visible_scopes(node: &SyntaxNode) -> Vec<SyntaxNode> {
     scopes
 }
 
-fn protected(node: &SyntaxNode) -> bool {
-    node.ancestors().any(|node| {
-        node.children()
-            .filter_map(ast::Attr::cast)
-            .any(|attr| !safe_attribute(&attr))
-    })
-}
-
-// These built-ins neither generate bindings nor inspect the surrounding tokens.
-// Keep cfg_attr conservative: it can enable an arbitrary attribute macro.
-fn safe_attribute(attribute: &ast::Attr) -> bool {
-    attribute
-        .meta()
-        .and_then(|meta| meta.simple_name())
-        .is_some_and(|name| {
-            matches!(
-                name.as_str(),
-                "cfg"
-                    | "allow"
-                    | "warn"
-                    | "deny"
-                    | "forbid"
-                    | "expect"
-                    | "doc"
-                    | "deprecated"
-                    | "must_use"
-                    | "non_exhaustive"
-                    | "repr"
-            )
-        })
-}
-
 fn text(root: &SyntaxNode, range: TextRange) -> String {
-    root.text().to_string()[std::ops::Range::<usize>::from(range - root.text_range().start())].to_owned()
+    root.text().slice(range - root.text_range().start()).to_string()
 }
 
 pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet<String>) -> RuleOutput {
@@ -121,10 +132,9 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
         match &fact.kind {
             Kind::Import { name } => {
                 let Some(tree) = root
-                    .descendants()
-                    .filter_map(ast::UseTree::cast)
-                    .filter(|tree| tree.syntax().text_range().contains_range(fact.range))
-                    .min_by_key(|tree| tree.syntax().text_range().len())
+                    .covering_element(fact.range)
+                    .ancestors()
+                    .find_map(ast::UseTree::cast)
                 else {
                     continue;
                 };
@@ -164,7 +174,8 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
             },
             Kind::CrateAlias => {
                 if root
-                    .descendants()
+                    .covering_element(fact.range)
+                    .ancestors()
                     .filter_map(ast::ExternCrate::cast)
                     .any(|item| item.syntax().text_range().contains_range(fact.range))
                 {
@@ -176,7 +187,8 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
             },
             Kind::Glob => {
                 if root
-                    .descendants()
+                    .covering_element(fact.range)
+                    .ancestors()
                     .filter_map(ast::Use::cast)
                     .any(|item| item.syntax().text_range().contains_range(fact.range))
                 {
@@ -202,13 +214,10 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
                     (path.syntax().clone(), path.syntax().text_range())
                 } else {
                     let Some(path) = root
-                        .descendants()
+                        .covering_element(fact.range)
+                        .ancestors()
                         .filter_map(ast::Path::cast)
-                        .filter(|path| {
-                            path.syntax().text_range().start() == fact.range.start()
-                                && path.syntax().text_range().contains_range(fact.range)
-                        })
-                        .min_by_key(|path| path.syntax().text_range().len())
+                        .find(|path| path.syntax().text_range().start() == fact.range.start())
                     else {
                         continue;
                     };
@@ -227,9 +236,8 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
                         api: fact.api,
                         range,
                         node,
-                        scope,
+                        target: ImportTarget::Scope(scope),
                         qualified,
-                        merge: None,
                     });
                 }
             },
@@ -247,19 +255,20 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
         // Do not lift an import out of a conditional function/block/impl.
         // Attributes on the module itself guard both its imports and uses.
         let crosses_cfg = access.node.ancestors().take_while(|node| *node != module).any(|node| {
-            node.children().filter_map(ast::Attr::cast).any(|attr| {
-                attr.meta()
-                    .and_then(|meta| meta.simple_name())
-                    .is_some_and(|name| matches!(name.as_str(), "cfg" | "cfg_attr"))
-            })
+            node.children()
+                .filter_map(ast::Attr::cast)
+                .any(|attr| syntax::conditional_attribute(&attr))
         });
         if crosses_cfg {
             continue;
         }
         let path = text(root, access.range);
-        let Some((prefix, _)) = path.rsplit_once("::") else {
+        let Some((prefix, leaf)) = path.rsplit_once("::") else {
             continue;
         };
+        if leaf.trim() != access.api.name() {
+            continue;
+        }
         let candidate = imports
             .iter()
             .filter(|import| import.scope == module)
@@ -284,11 +293,39 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
                     })
             });
         if let Some(tree) = candidate {
-            access.scope = module;
-            access.merge = Some(tree);
+            access.target = ImportTarget::Group { tree, scope: module };
         }
     }
-    let mut groups: BTreeMap<(u32, u32), Vec<(usize, &Access)>> = BTreeMap::new();
+    // Reserve one binding per module/API, including module-level expressions
+    // that occur before an otherwise mergeable import. The destination must
+    // remain above every use, so an earlier scope insertion wins over a group.
+    let mut bindings: BTreeMap<_, ImportTarget> = BTreeMap::new();
+    for access in &accesses {
+        let scope = access.target.scope();
+        if !matches!(access.api, Api::Anyhow | Api::Bail | Api::Ensure)
+            || scope.kind() == SyntaxKind::STMT_LIST
+            || text(root, access.range).rsplit("::").next().map(str::trim) != Some(access.api.name())
+        {
+            continue;
+        }
+        let range = scope.text_range();
+        bindings
+            .entry((range.start(), range.end(), access.api))
+            .and_modify(|target| {
+                if access.target.key().1 < target.key().1 {
+                    *target = access.target.clone();
+                }
+            })
+            .or_insert_with(|| access.target.clone());
+    }
+    for access in &mut accesses {
+        let scope = access.target.scope();
+        let range = scope.text_range();
+        if let Some(target) = bindings.get(&(range.start(), range.end(), access.api)) {
+            access.target = target.clone();
+        }
+    }
+    let mut groups = FixGroups::new();
     for access in &accesses {
         if !access.qualified {
             let name = text(root, access.range).trim_start_matches("r#").to_owned();
@@ -314,11 +351,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
             range: access.range,
             message: format!("import this anyhow API first and use `{}`", access.api.name()),
         });
-        let range = access.scope.text_range();
-        groups
-            .entry((range.start().into(), range.end().into()))
-            .or_default()
-            .push((index, access));
+        groups.entry(access.target.key()).or_default().push((index, access));
     }
     for group in groups.values() {
         let mut edits = Vec::new();
@@ -333,6 +366,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
                 imports.iter().find(|import| {
                     import.api == access.api
                         && import.scope == *scope
+                        && !conditional_import(import)
                         && import.tree.syntax().text_range().end() <= access.range.start()
                 })
             });
@@ -361,8 +395,8 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
         }
         let Some(index) = first_issue else { continue };
         if !additions.is_empty() {
-            let scope = &group[0].1.scope;
-            if let Some(tree) = group.iter().find_map(|(_, access)| access.merge.as_ref()) {
+            let scope = group[0].1.target.scope();
+            if let ImportTarget::Group { tree, .. } = &group[0].1.target {
                 let Some(list) = tree.use_tree_list() else { continue };
                 let Some(last) = list.use_trees().last() else { continue };
                 let names: BTreeSet<_> = additions.into_values().collect();
@@ -376,7 +410,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
             let offset = if scope.kind() == SyntaxKind::SOURCE_FILE {
                 scope
                     .children()
-                    .find(|node| !ast::Attr::can_cast(node.kind()))
+                    .find(|node| !ast::AnyAttr::can_cast(node.kind()))
                     .map_or(scope.text_range().end(), |node| node.text_range().start())
             } else {
                 let Some(token) = scope.first_token() else { continue };
@@ -386,9 +420,11 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
                     .last()
                     .map_or(token.text_range().end(), |attr| attr.syntax().text_range().end())
             };
-            if scope.kind() == SyntaxKind::SOURCE_FILE
-                && has_comments(root, TextRange::new(root.text_range().start(), offset))
-            {
+            let preamble_end = scope
+                .children()
+                .find(|node| !ast::AnyAttr::can_cast(node.kind()))
+                .map_or(scope.text_range().end(), |node| node.text_range().start());
+            if has_comments(root, TextRange::new(scope.text_range().start(), preamble_end)) {
                 continue;
             }
             let newline = if root.text().to_string().contains("\r\n") {
@@ -426,13 +462,6 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], local_macros: &BTreeSet
     output
 }
 
-fn has_comments(root: &SyntaxNode, range: TextRange) -> bool {
-    root.descendants_with_tokens().any(|element| {
-        range.contains_range(element.text_range())
-            && matches!(element.kind(), SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT)
-    })
-}
-
 fn safe_name(
     access: &Access,
     name: &str,
@@ -440,6 +469,23 @@ fn safe_name(
     accesses: &[Access],
     local_macros: &BTreeSet<String>,
 ) -> bool {
+    // A conditional item initializer without a block offers no local place to
+    // insert an import. Do not lift a new binding outside that cfg boundary.
+    let insertion_scope = access.target.scope();
+    if existing.is_none()
+        && insertion_scope.kind() != SyntaxKind::STMT_LIST
+        && access
+            .node
+            .ancestors()
+            .take_while(|node| *node != insertion_scope)
+            .any(|node| {
+                node.children()
+                    .filter_map(ast::Attr::cast)
+                    .any(|attr| syntax::conditional_attribute(&attr))
+            })
+    {
+        return false;
+    }
     // Textually scoped macro_rules! can win over an imported macro, including
     // definitions in parent files or generated by another macro.
     if matches!(access.api, Api::Anyhow | Api::Bail | Api::Ensure) && local_macros.contains(name) {
@@ -451,21 +497,23 @@ fn safe_name(
         // A new module binding can flow into child files through super::*.
         // Without examining those consumers, keep module insertions conservative.
         if existing.is_none()
-            && scope == access.scope
+            && scope == access.target.scope()
             && scope.kind() != SyntaxKind::STMT_LIST
-            && access.merge.is_none()
+            && matches!(access.target, ImportTarget::Scope(_))
             && scope.children().any(|node| ast::Module::can_cast(node.kind()))
         {
             return false;
         }
         let macro_api = matches!(access.api, Api::Anyhow | Api::Bail | Api::Ensure);
-        let check_hidden = existing.map_or(scope == access.scope, |import| macro_api || import.scope != scope);
+        let check_hidden = existing.map_or(scope == access.target.scope(), |import| {
+            macro_api || import.scope != scope
+        });
         // Derive/attribute macros can emit bindings missing from the CST.
         if check_hidden
             && scope
                 .descendants()
                 .filter_map(ast::Attr::cast)
-                .any(|attr| !safe_attribute(&attr))
+                .any(|attr| !inert_attribute(&attr))
         {
             return false;
         }

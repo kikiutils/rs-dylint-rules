@@ -6,12 +6,15 @@ use ra_ap_syntax::{
     ast,
 };
 
-use crate::diagnostic::{
-    Diagnostic,
-    Edit,
-    Fix,
-    Issue,
-    RuleOutput,
+use crate::{
+    diagnostic::{
+        Diagnostic,
+        Edit,
+        Fix,
+        Issue,
+        RuleOutput,
+    },
+    syntax,
 };
 
 pub(super) const GROUPS: &[&[&str]] = &[
@@ -178,11 +181,12 @@ fn safe_attribute(attribute: &ast::Attr, owner_keys: Option<&[SortKey]>) -> bool
     if derive_meta(attribute).is_some() {
         return true;
     }
+    if syntax::inert_attribute(attribute) {
+        return true;
+    }
     let Some(meta) = attribute.meta() else { return false };
     let Some(name) = meta.simple_name() else { return false };
     match name.as_str() {
-        "cfg" | "allow" | "warn" | "deny" | "forbid" | "expect" | "doc" | "deprecated" | "must_use"
-        | "non_exhaustive" | "repr" => true,
         "serde" | "is_empty" | "strum" => {
             let Some(keys) = owner_keys else { return false };
             let derives: &[&str] = match name.as_str() {
