@@ -106,7 +106,8 @@ pub use crate::a::c::rr::child as bridge;
 
 #[test]
 fn grouped_paths_and_block_local_bindings_keep_their_meaning() -> Result<()> {
-    let source = r"mod a {
+    let source = r"#![cfg_attr(test, allow(dead_code))]
+mod a {
     pub struct Value;
     pub struct Other;
     pub mod b {
@@ -126,22 +127,28 @@ fn grouped_paths_and_block_local_bindings_keep_their_meaning() -> Result<()> {
     let output = run(&directory, true)?;
     assert!(output.status.success(), "{output:?}");
     let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
-    // Conflicting shared prefixes need a use-tree rewrite and remain diagnostic-only.
-    // Independent paths inside a rootless group can still be fixed.
+    // Conflicting shared prefixes are split before independent prefix fixes.
     assert_eq!(
         fixed,
         source
+            .replace(
+                "use crate::a::{Value as Parent, b::Local as Own};",
+                "use super::Value as Parent;\nuse self::Local as Own;"
+            )
             .replace("crate::a::Value as Separate", "super::Value as Separate")
             .replace("crate::a::{Value as Uniform", "super::{Value as Uniform")
             .replace("crate::a::*", "super::*")
     );
-    assert_ne!(diagnostics(&run(&directory, false)?).len(), 0);
+    let output = run(&directory, false)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(diagnostics(&output).is_empty(), "{output:?}");
     Ok(())
 }
 
 #[test]
 fn lint_levels_cfg_and_macro_expansions_are_respected() -> Result<()> {
-    let source = r"mod a {
+    let source = r"#![cfg_attr(test, allow(dead_code))]
+mod a {
     pub struct Value;
     #[allow(kiki_import_path_prefix)]
     mod allowed { use crate::a::Value; }

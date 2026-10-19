@@ -192,6 +192,7 @@ impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
                 },
             };
             let mut emitted = Vec::new();
+            let mut split_ranges = Vec::new();
             for import in &facts.paths {
                 // Macro inputs are token trees, not source use items. Expansion
                 // tokens can retain original spans even without expansion ctxt.
@@ -216,6 +217,22 @@ impl<'tcx> LateLintPass<'tcx> for ImportPathPrefix {
                             .all(|other| other.plan == import.plan || other.plan.range.intersect(edit.range).is_none())
                     },
                 );
+                let edit = edit.or_else(|| {
+                    let split = analysis::split_import(
+                        source.parsed.syntax(),
+                        &import.segments,
+                        &facts
+                            .paths
+                            .iter()
+                            .map(|path| (path.segments.as_slice(), &path.plan))
+                            .collect::<Vec<_>>(),
+                    )?;
+                    if split_ranges.contains(&split.range) {
+                        return None;
+                    }
+                    split_ranges.push(split.range);
+                    Some(split)
+                });
                 cx.tcx.emit_node_span_lint(
                     KIKI_IMPORT_PATH_PREFIX,
                     import.id,

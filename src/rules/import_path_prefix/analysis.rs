@@ -60,11 +60,11 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
         .descendants()
         .filter_map(ast::Use::cast)
         .find(|item| item.syntax().text_range().contains_range(segments[0].range))?;
-    if import
-        .syntax()
-        .ancestors()
-        .any(|node| node.children().any(|child| ast::Attr::can_cast(child.kind())))
-    {
+    if import.syntax().ancestors().any(|node| {
+        node.children()
+            .filter_map(ast::Attr::cast)
+            .any(|attr| !safe_attribute(&attr))
+    }) {
         return None;
     }
     // Replacements may span multiple segments only when they are a contiguous
@@ -90,4 +90,138 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
         range: plan.range,
         replacement: plan.replacement.clone(),
     })
+}
+
+// cfg_attr is safe only when every potentially enabled attribute is safe.
+fn safe_attribute(attribute: &ast::Attr) -> bool {
+    attribute.meta().is_some_and(safe_meta)
+}
+
+fn safe_meta(meta: ast::Meta) -> bool {
+    if let ast::Meta::CfgAttrMeta(meta) = meta {
+        return meta.metas().all(safe_meta);
+    }
+    meta.simple_name().is_some_and(|name| {
+        matches!(
+            name.as_str(),
+            "cfg"
+                | "allow"
+                | "warn"
+                | "deny"
+                | "forbid"
+                | "expect"
+                | "doc"
+                | "deprecated"
+                | "must_use"
+                | "non_exhaustive"
+                | "repr"
+                | "path"
+        )
+    })
+}
+
+// Rebuild comment-free branches independently, applying compiler-confirmed
+// prefix plans while preserving all other import routes.
+pub(super) fn split_import(root: &SyntaxNode, segments: &[Segment], plans: &[(&[Segment], &Plan)]) -> Option<Edit> {
+    let first = segments.first()?;
+    let import = root
+        .descendants()
+        .filter_map(ast::Use::cast)
+        .find(|item| item.syntax().text_range().contains_range(first.range))?;
+    if import.syntax().ancestors().any(|node| {
+        node.children()
+            .filter_map(ast::Attr::cast)
+            .any(|attr| !safe_attribute(&attr))
+    }) || import.syntax().descendants_with_tokens().any(|element| {
+        matches!(
+            element.kind(),
+            ra_ap_syntax::SyntaxKind::COMMENT | ra_ap_syntax::SyntaxKind::DOC_COMMENT
+        )
+    }) {
+        return None;
+    }
+    let tree = import.use_tree()?;
+    let mut paths = Vec::new();
+    flatten(&tree, &[], plans, &mut paths)?;
+    if paths.len() < 2 && tree.use_tree_list().is_none() {
+        return None;
+    }
+    let source = root.text().to_string();
+    let base = root.text_range().start();
+    let prefix = &source[std::ops::Range::<usize>::from(
+        TextRange::new(import.syntax().text_range().start(), tree.syntax().text_range().start()) - base,
+    )];
+    let newline = if source.contains("\r\n") { "\r\n" } else { "\n" };
+    let replacement = paths
+        .iter()
+        .map(|path| format!("{prefix}{path};"))
+        .collect::<Vec<_>>()
+        .join(newline);
+    (!paths.is_empty()).then_some(Edit {
+        range: import.syntax().text_range(),
+        replacement,
+    })
+}
+
+fn flatten(
+    tree: &ast::UseTree,
+    prefix: &[Segment],
+    plans: &[(&[Segment], &Plan)],
+    output: &mut Vec<String>,
+) -> Option<()> {
+    let mut segments = prefix.to_vec();
+    if let Some(path) = tree.path() {
+        // Absolute extern-prelude paths are not rewritten by this rule.
+        if path.syntax().text().to_string().trim_start().starts_with("::") {
+            return None;
+        }
+        segments.extend(path.segments().map(|segment| Segment {
+            name: segment.syntax().text().to_string(),
+            range: segment.syntax().text_range(),
+        }));
+    }
+    if let Some(list) = tree.use_tree_list() {
+        for child in list.use_trees() {
+            flatten(&child, &segments, plans, output)?;
+        }
+        return Some(());
+    }
+    let mut names: Vec<_> = segments.iter().map(|segment| segment.name.clone()).collect();
+    if let Some((_, plan)) = plans.iter().find(|(path, _)| {
+        path.iter()
+            .map(|segment| segment.range)
+            .eq(segments.iter().map(|segment| segment.range))
+    }) {
+        let consumed = if plan.range.is_empty() {
+            0
+        } else {
+            segments
+                .iter()
+                .position(|segment| segment.range.end() == plan.range.end())?
+                + 1
+        };
+        // Anchor-module imports still require their own grouped-self policy.
+        if consumed < names.len() || tree.star_token().is_some() {
+            names.splice(..consumed, [plan.replacement.trim_end_matches("::").to_owned()]);
+        }
+    }
+    if names.len() > 1 && names.last().is_some_and(|name| name == "self") {
+        names.pop();
+    }
+    let mut full = names.join("::");
+    if tree.star_token().is_some() {
+        if !full.is_empty() {
+            full.push_str("::");
+        }
+        full.push('*');
+    }
+    if let Some(rename) = tree.rename() {
+        full.push(' ');
+        full.push_str(&rename.syntax().text().to_string());
+    }
+    if full.is_empty() {
+        return None;
+    }
+    output.push(full);
+    Some(())
 }
