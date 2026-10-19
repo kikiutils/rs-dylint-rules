@@ -20,8 +20,10 @@ main() {
     log_info 'Applying Clippy fixes...'
     cargo lint-fix --allow-dirty --allow-staged
 
-    log_info 'Applying Mordant fixes...'
-    cargo mlint-fix --allow-dirty --allow-staged
+    # TODO: Re-enable when Mordant supports this crate's nightly-2026-10-01 rustc_private APIs.
+    # Its current driver uses nightly-2026-09-01, which cannot compile this crate.
+    # log_info 'Applying Mordant fixes...'
+    # cargo mlint-fix --allow-dirty --allow-staged
 
     log_info 'Formatting Rust sources...'
     exec cargo format-fix

@@ -17,7 +17,7 @@ use crate::diagnostic::{
 };
 
 // Enums
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Group {
     External,
     Module,

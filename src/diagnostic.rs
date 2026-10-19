@@ -23,7 +23,7 @@ pub(crate) struct Issue {
     pub(crate) fix: Option<Fix>,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct RuleOutput {
     pub(crate) issues: Vec<Issue>,
 }
