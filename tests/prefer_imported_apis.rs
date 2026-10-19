@@ -280,3 +280,110 @@ use hidden::*;
     }
     Ok(())
 }
+
+#[test]
+fn builtin_attributes_do_not_block_closure_macro_fixes() -> Result<()> {
+    let source = r#"#![allow(dead_code)]
+use anyhow::{Result, bail};
+mod child {}
+struct Context {
+    #[cfg(unix)] field: (),
+}
+#[allow(dead_code)]
+fn unrelated() {}
+#[must_use]
+fn context() -> Result<()> {
+    #![allow(unused_variables)]
+    None.ok_or_else(|| anyhow::anyhow!("runtime context is not initialized"))
+}
+"#;
+    let directory = fixture(source)?;
+    let output = run(&directory, true)?;
+    assert!(output.status.success(), "{output:?}");
+    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    assert!(fixed.contains("use anyhow::{Result, bail, anyhow};"), "{fixed}");
+    assert!(!fixed.contains("use anyhow::anyhow;"), "{fixed}");
+    assert!(
+        fixed.contains("|| anyhow!(\"runtime context is not initialized\")"),
+        "{fixed}"
+    );
+    let output = run(&directory, false)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(diagnostics(&output).is_empty(), "{output:?}");
+
+    let source = r#"#[cfg_attr(all(), inline)]
+fn protected() -> anyhow::Result<()> {
+    None.ok_or_else(|| anyhow::anyhow!("keep attribute boundary"))
+}
+"#;
+    let directory = fixture(source)?;
+    let output = run(&directory, true)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!diagnostics(&output).is_empty(), "{output:?}");
+    assert_eq!(
+        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
+        source
+    );
+    Ok(())
+}
+
+#[test]
+fn module_merges_respect_cfg_boundaries_and_inline_modules() -> Result<()> {
+    let source = r#"mod conditional_fn {
+    use anyhow::{Result, bail};
+    #[cfg(all())]
+    fn run() -> Result<()> { Err(anyhow::anyhow!("conditional function")) }
+}
+mod conditional_block {
+    use anyhow::{Result, bail};
+    fn run() -> Result<()> {
+        #[cfg(all())]
+        { return Err(anyhow::anyhow!("conditional block")); }
+        #[cfg(any())]
+        { missing::unresolved!(); }
+    }
+}
+#[cfg(all())]
+mod inline_existing {
+    use anyhow::{Result, bail,};
+    fn first() -> Result<()> { Err(anyhow::anyhow!("first")) }
+    fn second() -> Result<()> { Err(anyhow::anyhow!("second")) }
+}
+mod inline_missing {
+    fn run() { let _ = anyhow::anyhow!("local"); }
+}
+mod conditional_missing {
+    #[cfg(all())]
+    fn run() { let _ = anyhow::anyhow!("conditional local"); }
+}
+"#;
+    let directory = fixture(source)?;
+    let output = run(&directory, true)?;
+    assert!(output.status.success(), "{output:?}");
+    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    assert_eq!(fixed.matches("use anyhow::{Result, bail};").count(), 2, "{fixed}");
+    assert_eq!(
+        fixed.matches("use anyhow::{Result, bail, anyhow,};").count(),
+        1,
+        "{fixed}"
+    );
+    assert_eq!(fixed.matches("use anyhow::anyhow;").count(), 4, "{fixed}");
+    assert!(!fixed.contains("anyhow::anyhow!("), "{fixed}");
+    assert!(
+        fixed.contains("fn run() -> Result<()> {\nuse anyhow::anyhow;"),
+        "{fixed}"
+    );
+    assert!(
+        fixed.contains("{\nuse anyhow::anyhow;\n return Err(anyhow!(\"conditional block\")"),
+        "{fixed}"
+    );
+    assert!(fixed.contains("missing::unresolved!()"), "{fixed}");
+    let output = run(&directory, false)?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(diagnostics(&output).is_empty(), "{output:?}");
+    assert_eq!(
+        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
+        fixed
+    );
+    Ok(())
+}
