@@ -10,7 +10,7 @@
 - 檢查 Cargo／rustc 在當次 target、features 與 cfg 下實際載入的自有 Rust 來源。
 - 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置。
 - 遞迴檢查各作用域；涉及名稱、路徑或型別時，以 rustc 的實際解析結果為準。
-- 未啟用的程式碼不檢查；rustdoc 程式碼區塊與巨集相關支援範圍由各規則另行說明。
+- 未啟用的程式碼、rustdoc 程式碼區塊與巨集展開產生的 imports 不檢查；不改寫巨集輸入。絕對路徑 `::...` 目前略過。
 
 ## 規則
 
@@ -153,17 +153,23 @@ use super::super::super::other::OtherType;
 ## 例外
 
 - 函式或一般區塊內宣告、匯入的局部名稱，不一定屬於所屬 module 的命名空間；若加入 `self::` 等前綴會改變解析結果，不得套用模組前綴規則。
+- 無前綴路徑只有在 rustc 確認其為自身 crate 的項目，且目前 module 存在相同名稱、相同解析結果的 binding 時才檢查；無法確認的局部 binding 不猜測。
 - 無法可靠解析路徑的情況屬於實作限制，不代表允許使用不符合規則的前綴。
 
 ## Auto-fix
 
-盡可能支援，但不強求。
+由 `cargo dylint --fix` 套用 `MachineApplicable` suggestions，不自行寫檔或呼叫 rustfmt。
 
 - 只在能確認 module 層級與路徑解析結果不變時，替換路徑前綴。
 - 保留 aliases、可見性、attributes 與註解，不改變匯入目標。
-- 群組 imports 若混合不同目標，只修正能安全處理的部分；必要時拆分，無法確認時只提供診斷。
+- 支援一般 imports、aliases、glob 與群組內可獨立替換的前綴。共用前綴的各分支若要求不同修正，或替換必須跨越群組大括號，僅診斷，不拆分或重建 use tree。
+- 單獨匯入前綴所指的 module 本身時，若修正需要改寫成 `self::{self as Alias}` 或 `super::{self as Alias}` 等群組形式，目前僅診斷。
+- 替換區段含有註解，或 import／同份原文的外層作用域帶有 attributes 時，僅診斷，避免改變註解或 attribute macro 的輸入。
 - 不靠檔案目錄深度猜測 `super::` 數量；以 rustc 提供的 module 結構為準，`#[path]` 本身不阻擋修正。巨集或其他情況若無法確認 module 結構與解析結果，不自動修正。
 
 ### 完成進度
 
-- [ ] 草案，尚未實作；rustdoc、巨集相關支援與其他未定邊界於實作前確認。
+- [x] 以 rustc 的 module 結構、路徑分段解析與 binding 判定前綴，保留 re-export 路徑。
+- [x] 支援所有可見性、巢狀區塊、aliases、glob 與可安全替換的群組 imports。
+- [x] 驗證修正後編譯、lint levels、未啟用項目、巨集排除與 `#[path]`。
+- [ ] 跨群組大括號或需重建 use tree 的修正，目前僅診斷。

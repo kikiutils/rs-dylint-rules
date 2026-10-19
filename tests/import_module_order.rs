@@ -23,7 +23,7 @@ fn fixture(source: &str) -> Result<TempDir> {
 fn run(directory: &TempDir, fix: bool) -> Result<Output> {
     let mut command = Command::new("cargo");
     command
-        .env("DYLINT_RUSTFLAGS", "-A unused")
+        .env("DYLINT_RUSTFLAGS", "-A unused -A kiki_import_path_prefix")
         .current_dir(directory.path())
         .args([
             "+nightly-2026-10-01",
