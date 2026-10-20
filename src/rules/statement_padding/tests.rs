@@ -101,3 +101,54 @@ fn attributes_and_doc_comments_do_not_make_a_single_line_element_multiline() {
         "#[allow(dead_code)]\nconst A: &[u8] = &[\n    1,\n];\n\nconst B: u8 = 2;\n"
     );
 }
+
+#[test]
+fn single_line_constants_do_not_require_padding_before_multiline_constants() {
+    for source in [
+        r#"pub static CONFIG_DIR: LazyLock<Path> = LazyLock::new(|| path!("/etc/{COMPANY_DIR_NAME}/{APP_DIR_NAME}"));
+pub static DATA_DIR: LazyLock<Path> = LazyLock::new(|| path!("/var/lib/{COMPANY_DIR_NAME}/{APP_DIR_NAME}"));
+pub static ENROLLMENT_CONTEXT_FILE: LazyLock<Path> =
+    LazyLock::new(|| path!("/run/{COMPANY_DIR_NAME}/{APP_DIR_NAME}/{ENROLLMENT_CONTEXT_FILE_NAME}"));
+"#,
+        r#"pub(crate) const MINIMAL_EXECUTION: [(&str, &str); 2] = [("LC_ALL", "C"), ("PATH", MINIMAL_EXECUTION_PATH)];
+pub(crate) const MINIMAL_EXECUTION_PATH: &str = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
+pub(crate) const PACKAGE_MANAGER_EXECUTION: [(&str, &str); 3] = [
+    MINIMAL_EXECUTION[0],
+    MINIMAL_EXECUTION[1],
+    ("DEBIAN_FRONTEND", "noninteractive"),
+];
+"#,
+        "type A = u8;\ntype B = (\n    u8,\n    u16,\n);\n",
+    ] {
+        assert_eq!(check(source), RuleOutput::default(), "{source}");
+    }
+}
+
+#[test]
+fn expression_attributes_do_not_make_single_line_statements_multiline() {
+    for source in [
+        r#"fn run() {
+    #[cfg(target_os = "linux")]
+    process.process_group(0);
+    let mut child = process
+        .spawn()
+        .map_err(|error| format!("failed to execute {}: {error}", command.display()))?;
+}
+"#,
+        "fn run() {\n    #[allow(\n        unused\n    )]\n    process.process_group(0);\n    finish();\n}\n",
+        "fn run() {\n    /// About the call.\n    work();\n    finish();\n}\n",
+    ] {
+        assert_eq!(check(source), RuleOutput::default(), "{source}");
+    }
+
+    let source = "fn run() {\n    #[allow(unused)]\n    work(\n        1,\n    );\n    finish();\n}\n";
+    let output = check(source);
+    assert_eq!(output.issues.len(), 1);
+    let fixed = apply(source, &output);
+    assert_eq!(
+        fixed,
+        "fn run() {\n    #[allow(unused)]\n    work(\n        1,\n    );\n\n    finish();\n}\n"
+    );
+
+    assert_eq!(check(&fixed), RuleOutput::default());
+}

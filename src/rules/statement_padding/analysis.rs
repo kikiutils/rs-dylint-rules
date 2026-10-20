@@ -46,8 +46,7 @@ fn check_pair(source: &str, current: &SyntaxNode, next: &SyntaxNode, output: &mu
 
     let current_range = current.text_range();
     let multiline = is_multiline(source, current);
-    let single_line_constant = |node: &SyntaxNode| is_constant(node) && !is_multiline(source, node);
-    if single_line_constant(current) && single_line_constant(next) {
+    if is_constant(current) && !multiline && is_constant(next) {
         return;
     }
 
@@ -100,7 +99,10 @@ fn check_pair(source: &str, current: &SyntaxNode, next: &SyntaxNode, output: &mu
 // Attributes and comments belong to the element that follows them, so they do
 // not make a single-line element multi-line.
 fn is_multiline(source: &str, node: &SyntaxNode) -> bool {
-    let start = node
+    // Expression-statement attributes are stored on the expression itself.
+    let expression = ast::ExprStmt::cast(node.clone()).and_then(|statement| statement.expr());
+    let content = expression.as_ref().map_or(node, AstNode::syntax);
+    let start = content
         .children_with_tokens()
         .find(|element| {
             !matches!(
@@ -108,7 +110,7 @@ fn is_multiline(source: &str, node: &SyntaxNode) -> bool {
                 SyntaxKind::ATTR | SyntaxKind::WHITESPACE | SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT
             )
         })
-        .map_or(node.text_range().start(), |element| element.text_range().start());
+        .map_or(content.text_range().start(), |element| element.text_range().start());
 
     source[TextRange::new(start, node.text_range().end())].contains('\n')
 }

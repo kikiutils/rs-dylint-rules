@@ -100,11 +100,11 @@ pub fn run(values: &[u8]) -> Option<u8> {
 - `if` 跨多行，其後需要空行。
 - `let ... else` 跨多行，其後需要空行。
 
-`const A` 與 `const B` 都是單行常數，因此兩者之間不需要空行。改法即上方正確範例。
+`const A` 是單行常數，後方接著 `const B`，因此兩者之間不需要空行。改法即上方正確範例。
 
 ## 例外
 
-- 相鄰的單行 `const`、`static`、`type` 之間不要求空行。
+- 單行 `const`、`static`、`type` 後方接著另一個 `const`、`static`、`type` 時，不要求空行，無論後者是否跨多行。多行項目之後仍要求空行。
 - `use`、`extern crate` 與 `mod x;` 不檢查，前後皆不要求空行。
 - 同一檔案被多個 module 共用（例如 `#[path]`）時，只回報、不修正。
 
