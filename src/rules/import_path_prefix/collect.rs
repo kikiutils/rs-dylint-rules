@@ -8,7 +8,10 @@ use rustc_hir::{
     },
 };
 use rustc_lint::LateContext;
-use rustc_span::kw;
+use rustc_span::{
+    def_id::LocalDefId,
+    kw,
+};
 
 use super::analysis::{
     self,
@@ -35,7 +38,7 @@ impl Collector {
         item: &hir::Item<'tcx>,
     ) {
         if let hir::ItemKind::Use(tree) = item.kind {
-            self.import(cx, workspace, &tree, item.hir_id(), &[]);
+            self.import(cx, workspace, &tree, item.hir_id(), item.owner_id.def_id, &[]);
         }
     }
 
@@ -45,13 +48,14 @@ impl Collector {
         workspace: &mut Workspace,
         tree: &hir::UseTree<'tcx>,
         id: hir::HirId,
+        definition: LocalDefId,
         parent: &[&hir::PathSegment<'tcx>],
     ) {
         let mut segments = parent.to_vec();
         segments.extend(tree.prefix.segments);
         if let hir::UseKind::Nested { items } = tree.kind {
-            for (child, id, _) in items {
-                self.import(cx, workspace, child, *id, &segments);
+            for (child, id, definition) in items {
+                self.import(cx, workspace, child, *id, *definition, &segments);
             }
 
             return;
@@ -103,9 +107,14 @@ impl Collector {
                     return;
                 }
 
-                // A block-local binding is not necessarily visible through self::.
+                // A block-local binding is not necessarily visible through self::,
+                // and this import's own binding (e.g. a macro_rules! re-export)
+                // does not prove the name exists without it.
                 if !cx.tcx.module_children_local(module).iter().any(|child| {
-                    child.ident.name == first.ident.name && resolutions.contains(&child.res.map_id(|_| unreachable!()))
+                    child.ident.name == first.ident.name
+                        && resolutions.contains(&child.res.map_id(|_| unreachable!()))
+                        && child.reexport_chain.first().and_then(|reexport| reexport.id())
+                            != Some(definition.to_def_id())
                 }) {
                     return;
                 }

@@ -104,6 +104,8 @@ fn inert_meta(meta: ast::Meta) -> bool {
                 | "test"
                 | "ignore"
                 | "should_panic"
+                // serde_with: only annotates Option fields and re-emits the item unchanged.
+                | "skip_serializing_none"
         )
     })
 }
