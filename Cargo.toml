@@ -163,7 +163,7 @@ full = ["all"]
 [dependencies]
 anyhow = "1.0.104"
 dylint_linting = "6.2.0"
-kikiutils = { version = "0.12.2", features = ["fx-collections"] }
+kikiutils = { version = "0.13.0", features = ["fx-collections"] }
 pathkit = "2.0.0"
 ra_ap_syntax = "0.0.359"
 unicode-ident = "=1.0.24"
