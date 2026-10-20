@@ -1,27 +1,15 @@
-use ra_ap_syntax::{
-    AstNode,
-    Edition,
-    SourceFile,
+use super::analysis;
+use crate::{
+    diagnostic::RuleOutput,
+    test_support::{
+        apply,
+        parse,
+    },
 };
 
-use super::analysis;
-use crate::diagnostic::RuleOutput;
-
 fn check(source: &str) -> RuleOutput {
-    let parsed = SourceFile::parse(source, Edition::Edition2024);
-    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    analysis::analyze(parsed.tree().syntax())
-}
-
-fn apply(source: &str, output: &RuleOutput) -> String {
-    crate::test_support::apply_edits(
-        source,
-        output
-            .issues
-            .iter()
-            .filter_map(|issue| issue.fix.as_ref())
-            .flat_map(|fix| &fix.edits),
-    )
+    let root = parse(source);
+    analysis::analyze(&root, source)
 }
 
 #[test]

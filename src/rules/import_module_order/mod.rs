@@ -1,8 +1,8 @@
 mod analysis;
-mod compiler;
+pub(super) mod collect;
 mod fix;
 
-pub(super) const RULE: fn(&mut rustc_lint::LintStore) = self::compiler::register;
+rustc_lint_defs::declare_lint! { pub KIKI_IMPORT_MODULE_ORDER, Warn, "order imports and external module declarations" }
 
 #[cfg(test)]
 mod tests;

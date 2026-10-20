@@ -1,7 +1,4 @@
 use ra_ap_syntax::{
-    AstNode,
-    Edition,
-    SourceFile,
     TextRange,
     TextSize,
 };
@@ -10,6 +7,7 @@ use super::analysis::{
     self,
     Segment,
 };
+use crate::test_support::parse;
 
 fn segments(source: &str, names: &[&str]) -> Vec<Segment> {
     let mut offset = 0;
@@ -52,65 +50,35 @@ fn prefixes_use_the_closest_non_root_ancestor() {
 
 #[test]
 fn comments_groups_and_enclosing_attributes_block_unsafe_edits() {
-    for (source, names, consumed, allowed) in [
-        ("use crate::a::b::Value;", vec!["crate", "a", "b", "Value"], 3, true),
-        (
-            "use crate /*keep*/ ::a::b::Value;",
-            vec!["crate", "a", "b", "Value"],
-            3,
-            false,
-        ),
-        ("use crate::{a::b::Value};", vec!["crate", "a", "b", "Value"], 3, false),
-        (
-            "#[observe] mod m { use crate::a::b::Value; }",
-            vec!["crate", "a", "b", "Value"],
-            3,
-            false,
-        ),
-        (
-            "#[cfg(test)] mod m { use crate::a::b::Value; }",
-            vec!["crate", "a", "b", "Value"],
-            3,
-            true,
-        ),
-        (
-            "#[cfg(windows)] fn run() { use crate::a::b::Value; }",
-            vec!["crate", "a", "b", "Value"],
-            3,
-            true,
-        ),
-        (
-            "#![allow(dead_code)] #[cfg(all())] mod m { use crate::a::b::Value; }",
-            vec!["crate", "a", "b", "Value"],
-            3,
-            true,
-        ),
-        (
-            "#[cfg_attr(all(), observe)] mod m { use crate::a::b::Value; }",
-            vec!["crate", "a", "b", "Value"],
-            3,
-            false,
-        ),
-        (
-            "#[path = \"other.rs\"] mod m { use crate::a::b::Value; }",
-            vec!["crate", "a", "b", "Value"],
-            3,
-            true,
-        ),
-        ("use crate::a::b as alias;", vec!["crate", "a", "b"], 3, false),
-    ] {
-        let parsed = SourceFile::parse(source, Edition::Edition2024);
-        let segments = segments(source, &names);
-        let Some(plan) = analysis::plan(&segments, 2, 2, consumed) else {
+    let edit_allowed = |source: &str, names: &[&str]| {
+        let root = parse(source);
+        let segments = segments(source, names);
+        let Some(plan) = analysis::plan(&segments, 2, 2, 3) else {
             panic!("missing plan")
         };
 
-        assert_eq!(
-            analysis::edit(parsed.tree().syntax(), &segments, &plan, false).is_some(),
-            allowed,
-            "{source}"
-        );
+        analysis::edit(&root, source, &segments, &plan, false).is_some()
+    };
+
+    for (source, allowed) in [
+        ("use crate::a::b::Value;", true),
+        ("use crate /*keep*/ ::a::b::Value;", false),
+        ("use crate::{a::b::Value};", false),
+        ("#[observe] mod m { use crate::a::b::Value; }", false),
+        ("#[cfg(test)] mod m { use crate::a::b::Value; }", true),
+        ("#[cfg(windows)] fn run() { use crate::a::b::Value; }", true),
+        (
+            "#![allow(dead_code)] #[cfg(all())] mod m { use crate::a::b::Value; }",
+            true,
+        ),
+        ("#[cfg_attr(all(), observe)] mod m { use crate::a::b::Value; }", false),
+        ("#[path = \"other.rs\"] mod m { use crate::a::b::Value; }", true),
+    ] {
+        assert_eq!(edit_allowed(source, &["crate", "a", "b", "Value"]), allowed, "{source}");
     }
+
+    // Importing the anchor module itself needs a grouped self import instead.
+    assert!(!edit_allowed("use crate::a::b as alias;", &["crate", "a", "b"]));
 }
 
 #[test]
@@ -125,14 +93,14 @@ fn cfg_attr_checks_all_nested_attributes() {
         ("#[cfg_attr(any(), cfg_attr(any(), observe))]", false),
     ] {
         let source = format!("{attrs} mod m {{ use crate::a::Value; }}");
-        let parsed = SourceFile::parse(&source, Edition::Edition2024);
+        let root = parse(&source);
         let segments = segments(&source, &["crate", "a", "Value"]);
         let Some(plan) = analysis::plan(&segments, 1, 1, 2) else {
             panic!("missing plan")
         };
 
         assert_eq!(
-            analysis::edit(parsed.tree().syntax(), &segments, &plan, false).is_some(),
+            analysis::edit(&root, &source, &segments, &plan, false).is_some(),
             allowed,
             "{source}"
         );
@@ -142,9 +110,9 @@ fn cfg_attr_checks_all_nested_attributes() {
 #[test]
 fn split_preserves_visibility_attributes_aliases_and_globs() {
     let source = "#[cfg(all())] pub(crate) use crate::{a::{self as A, Value as V, *}, b::Other};";
-    let parsed = SourceFile::parse(source, Edition::Edition2024);
+    let root = parse(source);
     let segments = segments(source, &["crate", "a", "Value"]);
-    let Some(edit) = analysis::split_import(parsed.tree().syntax(), &segments, &[]) else {
+    let Some(edit) = analysis::split_import(&root, source, &segments, &[]) else {
         panic!("missing split edit")
     };
 
@@ -159,8 +127,8 @@ fn split_preserves_visibility_attributes_aliases_and_globs() {
         "#[expect(unused_imports)] use crate::{a::Value, b::Other};",
         "#[cfg_attr(all(), expect(unused_imports))] use crate::{a::Value, b::Other};",
     ] {
-        let parsed = SourceFile::parse(source, Edition::Edition2024);
+        let root = parse(source);
         let segments = self::segments(source, &["crate", "a", "Value"]);
-        assert!(analysis::split_import(parsed.tree().syntax(), &segments, &[]).is_none());
+        assert!(analysis::split_import(&root, source, &segments, &[]).is_none());
     }
 }

@@ -9,9 +9,9 @@ use anyhow::{
 use pathkit::{
     Path,
     SyncFsOps,
-    path,
 };
 use ra_ap_syntax::{
+    Edition,
     SourceFile,
     TextRange,
 };
@@ -19,42 +19,12 @@ use rustc_lint::{
     LateContext,
     LintContext,
 };
-use rustc_span::{
-    FileName,
-    Span,
-};
+use rustc_span::Span;
 
 pub(crate) struct Source {
     pub(crate) parsed: SourceFile,
+    pub(crate) text: String,
     file: Arc<rustc_span::SourceFile>,
-}
-
-pub(crate) fn locate(cx: &LateContext<'_>, span: Span) -> Option<(Path, TextRange)> {
-    if span.is_dummy() {
-        return None;
-    }
-
-    let file = cx.sess().source_map().lookup_source_file(span.lo());
-    if !file.contains(span.hi()) {
-        return None;
-    }
-
-    let FileName::Real(name) = &file.name else {
-        return None;
-    };
-
-    let path = path!(name.local_path()?).canonicalize().ok()?;
-    let root = path!(std::env::current_dir().ok()?).canonicalize().ok()?;
-    if !path.starts_with(root) {
-        return None;
-    }
-
-    let range = TextRange::new(
-        file.original_relative_byte_pos(span.lo()).0.into(),
-        file.original_relative_byte_pos(span.hi()).0.into(),
-    );
-
-    Some((path, range))
 }
 
 impl Source {
@@ -62,7 +32,7 @@ impl Source {
         match Self::read(cx, path, anchor) {
             Ok(source) => Some(source),
             Err(error) => {
-                cx.sess().dcx().span_err(anchor, format!("{error:#}"));
+                cx.sess().dcx().span_warn(anchor, format!("{error:#}"));
                 None
             },
         }
@@ -74,9 +44,10 @@ impl Source {
             .with_context(|| format!("Failed to read {path}"))?;
 
         let file = cx.sess().source_map().lookup_source_file(anchor.lo());
-        let normalized = text.strip_prefix('\u{feff}').unwrap_or(&text).replace("\r\n", "\n");
         ensure!(
-            file.src.as_ref().is_some_and(|source| source.as_str() == normalized),
+            file.src
+                .as_ref()
+                .is_some_and(|source| source.as_str() == normalized(&text)),
             "Source changed since rustc loaded {path}"
         );
 
@@ -87,16 +58,10 @@ impl Source {
             .parse()
             .map_err(|error| anyhow!("Unsupported Rust edition: {error}"))?;
 
-        let parsed = SourceFile::parse(&text, edition);
-        ensure!(
-            parsed.errors().is_empty(),
-            "Cannot parse {path} as a Rust item source file"
-        );
+        let parsed =
+            parse(&text, edition).with_context(|| format!("Cannot parse {path} as a Rust item source file"))?;
 
-        Ok(Self {
-            parsed: parsed.tree(),
-            file,
-        })
+        Ok(Self { parsed, text, file })
     }
 
     pub(crate) fn span(&self, range: TextRange) -> Span {
@@ -107,42 +72,58 @@ impl Source {
     }
 }
 
-// Track module-owned files independently of rule facts. This excludes standalone
-// include! fragments and prevents edits to one file from changing another module
-// instance's meaning. Inline modules have distinct source ranges.
-#[derive(Default)]
-pub(crate) struct ModuleSources {
-    modules: std::collections::BTreeSet<(Path, u32)>,
-    spans: std::collections::BTreeMap<(Path, u32, u32), u32>,
-    shared: std::collections::BTreeSet<Path>,
+fn normalized(text: &str) -> String {
+    text.strip_prefix('\u{feff}').unwrap_or(text).replace("\r\n", "\n")
 }
 
-impl ModuleSources {
-    pub(crate) fn record(&mut self, cx: &LateContext<'_>, span: Span, module: u32) {
-        let Some((path, range)) = locate(cx, span) else { return };
-        self.modules.insert((path.clone(), module));
-        if self
-            .spans
-            .insert((path.clone(), range.start().into(), range.end().into()), module)
-            .is_some_and(|previous| previous != module)
-        {
-            self.shared.insert(path);
+fn parse(text: &str, edition: Edition) -> Result<SourceFile> {
+    // Preserve original byte offsets, including BOM and CRLF, for rustc spans.
+    let padded;
+    let input = if let Some(rest) = text.strip_prefix('\u{feff}') {
+        padded = format!("   {rest}");
+        &padded
+    } else {
+        text
+    };
+
+    let parsed = SourceFile::parse(input, edition);
+    ensure!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    Ok(parsed.tree())
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use ra_ap_syntax::{
+        AstNode,
+        Edition,
+        ast,
+    };
+
+    #[test]
+    fn bom_and_crlf_preserve_original_offsets() -> Result<()> {
+        for newline in ["\n", "\r\n"] {
+            let text = format!("\u{feff}// 型別{newline}fn first() {{}}{newline}fn second() {{}}{newline}");
+            let parsed = super::parse(&text, Edition::Edition2024)?;
+            let functions: Vec<_> = parsed.syntax().children().filter_map(ast::Fn::cast).collect();
+            assert_eq!(functions.len(), 2);
+            for function in functions {
+                let Some(keyword) = function.fn_token() else {
+                    panic!("missing fn keyword")
+                };
+
+                assert_eq!(&text[keyword.text_range()], "fn");
+            }
+
+            assert!(!super::normalized(&text).contains('\r'));
+            assert!(!super::normalized(&text).starts_with('\u{feff}'));
         }
+
+        Ok(())
     }
 
-    pub(crate) fn contains(&self, path: &Path, module: u32) -> bool {
-        self.modules.contains(&(path.clone(), module))
-    }
-
-    pub(crate) fn contains_path(&self, path: &Path) -> bool {
-        // Entries sort by path first, so only the first entry at or after (path, 0) can match.
-        self.modules
-            .range((path.clone(), u32::MIN)..)
-            .next()
-            .is_some_and(|(owned, _)| owned == path)
-    }
-
-    pub(crate) fn can_fix(&self, path: &Path) -> bool {
-        !self.shared.contains(path)
+    #[test]
+    fn parser_failure_is_recoverable() {
+        assert!(super::parse("fn {", Edition::Edition2024).is_err());
     }
 }

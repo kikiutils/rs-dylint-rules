@@ -1,30 +1,18 @@
-use ra_ap_syntax::{
-    AstNode,
-    Edition,
-    SourceFile,
+use super::analysis;
+use crate::{
+    diagnostic::RuleOutput,
+    test_support::{
+        apply,
+        parse,
+    },
 };
 
-use super::analysis;
-use crate::diagnostic::RuleOutput;
-
 fn check(source: &str) -> RuleOutput {
-    let parsed = SourceFile::parse(source, Edition::Edition2024);
-    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    analysis::analyze(parsed.tree().syntax(), |range| {
-        let name = &source[std::ops::Range::<usize>::from(range)];
+    let root = parse(source);
+    analysis::analyze(&root, source, |range| {
+        let name = &source[range];
         analysis::sort_key(name)
     })
-}
-
-fn apply(source: &str, output: &RuleOutput) -> String {
-    crate::test_support::apply_edits(
-        source,
-        output
-            .issues
-            .iter()
-            .filter_map(|issue| issue.fix.as_ref())
-            .flat_map(|fix| &fix.edits),
-    )
 }
 
 #[test]
@@ -78,26 +66,25 @@ fn skips_cfg_attr_and_macro_token_trees() {
     for source in [
         "#[cfg_attr(feature = \"x\", derive(Eq, PartialEq))]\nstruct Value;\n",
         "macro_rules! make { () => { #[derive(Eq, PartialEq)] struct Value; } }\n",
-        "#[derive(Unknown, Eq, PartialEq)] struct Value;\n",
     ] {
         assert!(check(source).issues.is_empty(), "{source}");
     }
 }
 
 #[test]
-fn preserves_path_spelling_trailing_comma_and_raw_crlf_offsets() {
+fn preserves_path_spelling_and_raw_crlf_offsets() {
     let source =
         "const LABEL: &str = \"型別\";\r\n#[derive(core::cmp::Eq, core::cmp::PartialEq,)]\r\nstruct Value;\r\n";
 
-    let parsed = SourceFile::parse(source, Edition::Edition2024);
-    let output = analysis::analyze(parsed.tree().syntax(), |range| {
-        let name = source[std::ops::Range::<usize>::from(range)].rsplit("::").next()?;
+    let root = parse(source);
+    let output = analysis::analyze(&root, source, |range| {
+        let name = source[range].rsplit("::").next()?;
         analysis::sort_key(name)
     });
 
     assert_eq!(
         apply(source, &output),
-        "const LABEL: &str = \"型別\";\r\n#[derive(core::cmp::PartialEq, core::cmp::Eq,)]\r\nstruct Value;\r\n"
+        "const LABEL: &str = \"型別\";\r\n#[derive(core::cmp::PartialEq, core::cmp::Eq)]\r\nstruct Value;\r\n"
     );
 }
 

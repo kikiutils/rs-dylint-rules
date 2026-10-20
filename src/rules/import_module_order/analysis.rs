@@ -1,6 +1,5 @@
 use ra_ap_syntax::{
     AstNode,
-    SyntaxKind,
     SyntaxNode,
     ast::{
         self,
@@ -9,14 +8,16 @@ use ra_ap_syntax::{
 };
 
 use super::fix::reorder;
-use crate::diagnostic::{
-    Diagnostic,
-    Fix,
-    Issue,
-    RuleOutput,
+use crate::{
+    diagnostic::{
+        Diagnostic,
+        Fix,
+        Issue,
+        RuleOutput,
+    },
+    syntax,
 };
 
-// Enums
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum Group {
     External,
@@ -24,41 +25,33 @@ pub(super) enum Group {
     Local,
 }
 
-// Structs
 pub(super) struct Entry {
     pub(super) node: SyntaxNode,
     pub(super) group: Group,
 }
 
-// Functions
-
-/// Resolution and activation come from the compiler; ordering uses original CST nodes.
+// Resolution and activation come from the compiler; ordering uses original CST nodes.
 pub(super) fn analyze(
     root: &SyntaxNode,
     resolve: &impl Fn(&ast::Path) -> Option<Group>,
     is_active: &impl Fn(&SyntaxNode) -> bool,
 ) -> RuleOutput {
-    let mut analysis = RuleOutput::default();
+    let mut output = RuleOutput::default();
 
-    for scope in root.descendants().filter(|node| {
-        matches!(
-            node.kind(),
-            SyntaxKind::SOURCE_FILE | SyntaxKind::ITEM_LIST | SyntaxKind::STMT_LIST
-        )
-    }) {
+    for scope in root.descendants().filter(syntax::is_scope) {
         if is_active(&scope) {
-            check_scope(&scope, resolve, is_active, &mut analysis);
+            check_scope(&scope, resolve, is_active, &mut output);
         }
     }
 
-    analysis
+    output
 }
 
 fn check_scope(
     scope: &SyntaxNode,
     resolve: &impl Fn(&ast::Path) -> Option<Group>,
     is_active: &impl Fn(&SyntaxNode) -> bool,
-    analysis: &mut RuleOutput,
+    output: &mut RuleOutput,
 ) {
     let mut entries = Vec::new();
     let mut uncertain = false;
@@ -80,13 +73,13 @@ fn check_scope(
 
             if !complete || groups.is_empty() {
                 uncertain = true;
-                analysis.report(Diagnostic {
+                output.report(Diagnostic {
                     range: node.text_range(),
                     message: "cannot safely classify this import; its module origin is unresolved or differs between analysis contexts".to_owned(),
                 });
             } else if groups.len() != 1 {
                 uncertain = true;
-                analysis.report(Diagnostic {
+                output.report(Diagnostic {
                     range: node.text_range(),
                     message: "external and local imports must not be mixed in the same use declaration".to_owned(),
                 });
@@ -122,13 +115,13 @@ fn check_scope(
     }
 
     if !uncertain && let Some(edit) = reorder(scope, &entries) {
-        analysis.issues.push(Issue {
+        output.issues.push(Issue {
             diagnostics: violations,
             fix: Some(Fix { edits: vec![edit] }),
         });
     } else {
         for diagnostic in violations {
-            analysis.report(diagnostic);
+            output.report(diagnostic);
         }
     }
 }
@@ -139,12 +132,20 @@ fn is_test_module(module: &ast::Module) -> bool {
             return false;
         };
 
-        let Some(ast::CfgPredicate::CfgAtom(atom)) = meta.cfg_predicate() else {
-            return false;
-        };
-
-        atom.eq_token().is_none() && atom.ident_token().is_some_and(|token| token.text() == "test")
+        meta.cfg_predicate().is_some_and(requires_test)
     })
+}
+
+fn requires_test(predicate: ast::CfgPredicate) -> bool {
+    match predicate {
+        ast::CfgPredicate::CfgAtom(atom) => {
+            atom.eq_token().is_none() && atom.ident_token().is_some_and(|token| token.text() == "test")
+        },
+        ast::CfgPredicate::CfgComposite(composite) => {
+            composite.keyword().is_some_and(|token| token.text() == "all")
+                && composite.cfg_predicates().any(requires_test)
+        },
+    }
 }
 
 fn collect_groups(
@@ -152,11 +153,8 @@ fn collect_groups(
     resolve: &impl Fn(&ast::Path) -> Option<Group>,
     groups: &mut Vec<Group>,
 ) -> bool {
-    if let Some(mut path) = tree.path() {
-        while let Some(qualifier) = path.qualifier() {
-            path = qualifier;
-        }
-
+    if let Some(path) = tree.path() {
+        let path = path.first_qualifier_or_self();
         let Some(segment) = path.segment() else {
             return false;
         };

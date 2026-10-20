@@ -17,32 +17,35 @@ use crate::{
     syntax,
 };
 
-pub(super) const GROUPS: &[&[&str]] = &[
-    &["Debug"],
-    &["Clone", "Copy"],
-    &["Default"],
-    &["PartialEq", "Eq", "PartialOrd", "Ord", "Hash"],
-    &["Serialize", "Serialize_repr", "Deserialize", "Deserialize_repr"],
-    &["IsEmpty", "EnumIs"],
-    &["EnumCount", "VariantNames", "VariantArray"],
-];
-
-// Group order first, then the fixed position within that group.
 pub(super) type SortKey = (usize, usize);
 
+#[cfg(test)]
 pub(super) fn sort_key(name: &str) -> Option<SortKey> {
-    GROUPS.iter().enumerate().find_map(|(group, names)| {
-        names
-            .iter()
-            .position(|known| *known == name)
-            .map(|position| (group, position))
-    })
+    super::DERIVES
+        .iter()
+        .find(|derive| derive.name == name)
+        .map(|derive| derive.key)
 }
 
-pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<SortKey>) -> RuleOutput {
+fn groups_message() -> String {
+    let mut groups: Vec<Vec<&str>> = Vec::new();
+    for derive in super::DERIVES {
+        if groups.len() <= derive.key.0 {
+            groups.push(Vec::new());
+        }
+
+        groups[derive.key.0].push(derive.name);
+    }
+
+    groups
+        .iter()
+        .map(|group| group.join(", "))
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+pub(super) fn analyze(root: &SyntaxNode, source: &str, resolve: impl Fn(TextRange) -> Option<SortKey>) -> RuleOutput {
     let mut output = RuleOutput::default();
-    let source = root.text().to_string();
-    let base = root.text_range().start();
     for attribute in root.descendants().filter_map(ast::Attr::cast) {
         let Some((tree, inner, paths)) = derive_list(&attribute) else {
             continue;
@@ -56,21 +59,14 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
             continue;
         };
 
-        if keys.windows(2).all(|pair| pair[0] <= pair[1]) {
+        if keys.is_sorted() {
             continue;
         }
 
         let range = attribute.syntax().text_range();
         let diagnostic = Diagnostic {
             range,
-            message: format!(
-                "expected derives grouped as {}",
-                GROUPS
-                    .iter()
-                    .map(|group| group.join(", "))
-                    .collect::<Vec<_>>()
-                    .join("; ")
-            ),
+            message: format!("expected derives grouped as {}", groups_message()),
         };
 
         let owner = attribute.syntax().parent();
@@ -83,39 +79,25 @@ pub(super) fn analyze(root: &SyntaxNode, resolve: impl Fn(TextRange) -> Option<S
             .filter_map(&resolve)
             .collect();
 
-        let protected = attribute.syntax().ancestors().skip(1).any(|ancestor| {
-            ancestor.children().filter_map(ast::Attr::cast).any(|other| {
-                !safe_attribute(
-                    &other,
-                    (owner.as_ref() == Some(&ancestor)).then_some(owner_keys.as_slice()),
-                )
-            })
+        let protected = syntax::protected_with(attribute.syntax(), |other| {
+            safe_attribute(
+                other,
+                (other.syntax().parent() == owner).then_some(owner_keys.as_slice()),
+            )
         });
 
-        let comments = tree
-            .syntax()
-            .descendants_with_tokens()
-            .any(|element| matches!(element.kind(), SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT));
-
-        if protected || comments {
+        if protected || syntax::has_comments(tree.syntax(), tree.syntax().text_range()) {
             output.report(diagnostic);
             continue;
         }
 
         let mut ordered: Vec<_> = paths.iter().zip(keys).collect();
         ordered.sort_by_key(|(_, key)| *key);
-        let mut replacement = ordered
+        let replacement = ordered
             .iter()
-            .map(|(range, _)| source[std::ops::Range::<usize>::from(**range - base)].to_owned())
+            .map(|(range, _)| source[**range].to_owned())
             .collect::<Vec<_>>()
             .join(", ");
-
-        if source[std::ops::Range::<usize>::from(inner - base)]
-            .trim_end()
-            .ends_with(',')
-        {
-            replacement.push(',');
-        }
 
         output.issues.push(Issue {
             diagnostics: vec![diagnostic],
@@ -199,27 +181,12 @@ fn safe_attribute(attribute: &ast::Attr, owner_keys: Option<&[SortKey]>) -> bool
         return true;
     }
 
-    if syntax::inert_attribute(attribute) {
-        return true;
-    }
+    let Some(keys) = owner_keys else { return false };
+    let Some(name) = attribute.meta().and_then(|meta| meta.simple_name()) else {
+        return false;
+    };
 
-    let Some(meta) = attribute.meta() else { return false };
-    let Some(name) = meta.simple_name() else { return false };
-    match name.as_str() {
-        "serde" | "is_empty" | "strum" => {
-            let Some(keys) = owner_keys else { return false };
-            let derives: &[&str] = match name.as_str() {
-                "serde" => &["Serialize", "Deserialize", "Deserialize_repr"],
-                "is_empty" => &["IsEmpty"],
-                "strum" => &["EnumIs", "EnumCount", "VariantNames", "VariantArray"],
-                _ => unreachable!(),
-            };
-
-            derives
-                .iter()
-                .filter_map(|name| sort_key(name))
-                .any(|key| keys.contains(&key))
-        },
-        _ => false,
-    }
+    super::DERIVES
+        .iter()
+        .any(|derive| derive.helper == Some(name.as_str()) && keys.contains(&derive.key))
 }

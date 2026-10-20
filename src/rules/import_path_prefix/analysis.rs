@@ -6,7 +6,13 @@ use ra_ap_syntax::{
 };
 
 use crate::{
-    diagnostic::Edit,
+    diagnostic::{
+        Diagnostic,
+        Edit,
+        Fix,
+        Issue,
+        RuleOutput,
+    },
     syntax,
 };
 
@@ -20,6 +26,62 @@ pub(super) struct Segment {
 pub(super) struct Plan {
     pub(super) range: TextRange,
     pub(super) replacement: String,
+}
+
+// A compiler-resolved use path and the prefix it should be written with.
+pub(super) struct Import {
+    pub(super) segments: Vec<Segment>,
+    pub(super) plan: Plan,
+    pub(super) glob: bool,
+}
+
+pub(super) fn analyze(root: &SyntaxNode, source: &str, imports: &[&Import]) -> RuleOutput {
+    let mut output = RuleOutput::default();
+    let mut emitted = Vec::new();
+    let mut split_ranges = Vec::new();
+    for import in imports {
+        // Macro inputs are token trees, not source use items. Expansion
+        // tokens can retain original spans even without expansion ctxt.
+        if syntax::enclosing::<ast::Use>(root, import.segments[0].range).is_none() {
+            continue;
+        }
+
+        if emitted.contains(&import.plan) {
+            continue;
+        }
+
+        emitted.push(import.plan.clone());
+        let edit = edit(root, source, &import.segments, &import.plan, import.glob).filter(|edit| {
+            imports
+                .iter()
+                .all(|other| other.plan == import.plan || other.plan.range.intersect(edit.range).is_none())
+        });
+
+        let edit = edit.or_else(|| {
+            let plans: Vec<_> = imports
+                .iter()
+                .map(|other| (other.segments.as_slice(), &other.plan))
+                .collect();
+
+            let split = split_import(root, source, &import.segments, &plans)?;
+            if split_ranges.contains(&split.range) {
+                return None;
+            }
+
+            split_ranges.push(split.range);
+            Some(split)
+        });
+
+        output.issues.push(Issue {
+            diagnostics: vec![Diagnostic {
+                range: import.plan.range,
+                message: format!("expected import prefix `{}`", import.plan.replacement),
+            }],
+            fix: edit.map(|edit| Fix { edits: vec![edit] }),
+        });
+    }
+
+    output
 }
 
 // The compiler has already established the starting module and the direct
@@ -56,17 +118,14 @@ pub(super) fn plan(segments: &[Segment], depth: usize, base: usize, consumed: us
     })
 }
 
-pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: bool) -> Option<Edit> {
+pub(super) fn edit(root: &SyntaxNode, source: &str, segments: &[Segment], plan: &Plan, glob: bool) -> Option<Edit> {
     // Importing the anchor module itself needs a grouped self import. Report it
     // without inventing a new use-tree shape.
     if !glob && segments.last()?.range.end() == plan.range.end() {
         return None;
     }
 
-    let import = root
-        .descendants()
-        .filter_map(ast::Use::cast)
-        .find(|item| item.syntax().text_range().contains_range(segments[0].range))?;
+    let import = syntax::enclosing::<ast::Use>(root, segments[0].range)?;
 
     if syntax::protected(import.syntax()) {
         return None;
@@ -74,20 +133,16 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
 
     // Replacements may span multiple segments only when they are a contiguous
     // path. In particular, never erase braces, aliases, comments or siblings.
-    let source = root.text().to_string();
-    let base = root.text_range().start();
     for pair in segments.windows(2) {
         let gap = TextRange::new(pair[0].range.end(), pair[1].range.start());
         if !plan.range.contains_range(gap) {
             continue;
         }
 
-        let text = &source[std::ops::Range::<usize>::from(gap - base)];
-        if text
+        if source[gap]
             .chars()
             .filter(|character| !character.is_whitespace())
-            .collect::<String>()
-            != "::"
+            .ne("::".chars())
         {
             return None;
         }
@@ -101,12 +156,14 @@ pub(super) fn edit(root: &SyntaxNode, segments: &[Segment], plan: &Plan, glob: b
 
 // Rebuild comment-free branches independently, applying compiler-confirmed
 // prefix plans while preserving all other import routes.
-pub(super) fn split_import(root: &SyntaxNode, segments: &[Segment], plans: &[(&[Segment], &Plan)]) -> Option<Edit> {
+pub(super) fn split_import(
+    root: &SyntaxNode,
+    source: &str,
+    segments: &[Segment],
+    plans: &[(&[Segment], &Plan)],
+) -> Option<Edit> {
     let first = segments.first()?;
-    let import = root
-        .descendants()
-        .filter_map(ast::Use::cast)
-        .find(|item| item.syntax().text_range().contains_range(first.range))?;
+    let import = syntax::enclosing::<ast::Use>(root, first.range)?;
 
     if syntax::protected(import.syntax())
         || syntax::has_comments(import.syntax(), import.syntax().text_range())
@@ -127,18 +184,13 @@ pub(super) fn split_import(root: &SyntaxNode, segments: &[Segment], plans: &[(&[
         return None;
     }
 
-    let source = root.text().to_string();
-    let base = root.text_range().start();
-    let prefix = &source[std::ops::Range::<usize>::from(
-        TextRange::new(import.syntax().text_range().start(), tree.syntax().text_range().start()) - base,
-    )];
+    let prefix = &source[TextRange::new(import.syntax().text_range().start(), tree.syntax().text_range().start())];
 
-    let newline = if source.contains("\r\n") { "\r\n" } else { "\n" };
     let replacement = paths
         .iter()
         .map(|path| format!("{prefix}{path};"))
         .collect::<Vec<_>>()
-        .join(newline);
+        .join("\n");
 
     (!paths.is_empty()).then_some(Edit {
         range: import.syntax().text_range(),

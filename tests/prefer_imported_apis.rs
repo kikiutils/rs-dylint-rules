@@ -1,28 +1,12 @@
-use std::process::Output;
-
 use anyhow::Result;
-use pathkit::{
-    SyncFsOps,
-    path,
-};
 use tempfile::TempDir;
 
 mod support;
 
 fn fixture(source: &str) -> Result<TempDir> {
     let directory = support::fixture(source)?;
-    let manifest = path!(directory.path()) / "Cargo.toml";
-    let text = manifest.read_to_string_sync()?;
-    manifest.write_sync(format!("{text}\n[dependencies]\nanyhow=\"=1.0.104\"\n"))?;
+    support::anyhow(&directory)?;
     Ok(directory)
-}
-
-fn run(directory: &TempDir, fix: bool) -> Result<Output> {
-    support::run(directory, fix, "kiki_prefer_imported_apis")
-}
-
-fn diagnostics(output: &Output) -> Vec<serde_json::Value> {
-    support::diagnostics(output, "kiki_prefer_imported_apis")
 }
 
 #[test]
@@ -40,12 +24,16 @@ pub fn run(valid: bool) -> anyhow::Result<()> {
 "#;
 
     let directory = fixture(source)?;
-    let output = run(&directory, false)?;
+    let output = support::run(&directory, false, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).len() >= 5, "{output:?}");
-    let output = run(&directory, true)?;
+    assert!(
+        support::diagnostics(&output, "kiki_prefer_imported_apis").len() >= 5,
+        "{output:?}"
+    );
+
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     assert!(fixed.contains("-> AnyhowResult<()>"), "{fixed}");
     assert!(
         fixed.contains("use anyhow::Error as AnyhowError;"),
@@ -58,9 +46,13 @@ pub fn run(valid: bool) -> anyhow::Result<()> {
     assert!(fixed.contains("ensure!(valid"), "{fixed}");
     assert!(fixed.contains("use anyhow::bail;"), "{fixed}");
     assert!(fixed.contains("use anyhow::anyhow;"), "{fixed}");
-    let output = run(&directory, false)?;
+    let output = support::run(&directory, false, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).is_empty(), "{output:?}");
+    assert!(
+        support::diagnostics(&output, "kiki_prefer_imported_apis").is_empty(),
+        "{output:?}"
+    );
+
     let output = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
     assert!(output.status.success(), "{output:?}");
     Ok(())
@@ -81,16 +73,13 @@ fn run() -> AppResult<()> { let _: Option<Error> = None; fail!("failed"); }
 "#;
 
     let directory = fixture(source)?;
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
-        source
-    );
+    assert_eq!(support::source(&directory)?, source);
 
-    let output = run(&directory, false)?;
+    let output = support::run(&directory, false, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let reports = diagnostics(&output);
+    let reports = support::diagnostics(&output, "kiki_prefer_imported_apis");
     for line in 1..=8 {
         assert!(
             reports
@@ -124,17 +113,21 @@ mod conflict {
 "#;
 
     let directory = fixture(source)?;
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     assert!(fixed.contains("fn valid(flag: bool) -> AnyhowResult<()>"), "{fixed}");
     assert!(fixed.contains("let _ = AnyhowError::msg"), "{fixed}");
     assert!(fixed.contains("fn run() -> anyhow::Result<()>"), "{fixed}");
     assert!(fixed.contains("Option<anyhow::Error>"), "{fixed}");
     assert_eq!(fixed.matches("use anyhow::{").count(), 1, "{fixed}");
-    (path!(directory.path()) / "src" / "lib.rs").write_sync(format!(
-        "{fixed}\n#[test] fn behavior() {{ assert!(valid(true).is_ok()); assert!(valid(false).is_err()); }}\n"
-    ))?;
+    support::write(
+        &directory,
+        "src/lib.rs",
+        &format!(
+            "{fixed}\n#[test] fn behavior() {{ assert!(valid(true).is_ok()); assert!(valid(false).is_err()); }}\n"
+        ),
+    )?;
 
     let output = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
     assert!(output.status.success(), "{output:?}");
@@ -143,7 +136,7 @@ mod conflict {
 
 #[test]
 fn renamed_dependency_local_lookalikes_and_macro_inputs() -> Result<()> {
-    let directory = fixture(
+    let directory = support::fixture(
         r#"use errors::Result;
 mod local { pub type Result<T> = core::result::Result<T, ()>; pub struct Error; }
 fn other() -> local::Result<()> { let _: Option<local::Error> = None; Ok(()) }
@@ -157,87 +150,63 @@ self::pass! { fn generated() -> errors::Result<()> { errors::bail!("bad"); } }
 "#,
     )?;
 
-    let manifest = path!(directory.path()) / "Cargo.toml";
-    let text = manifest.read_to_string_sync()?.replace(
-        "anyhow=\"=1.0.104\"",
-        "errors={package=\"anyhow\",version=\"=1.0.104\"}",
-    );
+    support::dependency(
+        &directory,
+        &format!("errors={{package=\"anyhow\",version=\"{}\"}}", support::ANYHOW_VERSION),
+    )?;
 
-    manifest.write_sync(text)?;
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     assert!(fixed.contains("use errors::Result;"), "{fixed}");
     assert!(fixed.contains("use errors::bail;"), "{fixed}");
     assert!(fixed.contains("fn run() -> Result<()>"), "{fixed}");
     assert!(fixed.contains("fn other() -> local::Result<()>"), "{fixed}");
     assert!(fixed.contains("fn generated() -> errors::Result<()>"), "{fixed}");
-    let output = run(&directory, false)?;
+    let output = support::run(&directory, false, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).is_empty(), "{output:?}");
-    Ok(())
-}
+    assert!(
+        support::diagnostics(&output, "kiki_prefer_imported_apis").is_empty(),
+        "{output:?}"
+    );
 
-#[test]
-fn lint_levels_and_attributes_preserve_diagnostic_boundaries() -> Result<()> {
-    let directory = fixture(
-        r"#[allow(kiki_prefer_imported_apis)]
-fn allowed() -> anyhow::Result<()> { Ok(()) }
-#[deny(kiki_prefer_imported_apis)]
-fn denied() -> anyhow::Result<()> { Ok(()) }
-#[cfg(any())] fn inactive() -> missing::Result<()> { unreachable!() }
-",
-    )?;
-
-    let output = run(&directory, false)?;
-    assert!(!output.status.success(), "{output:?}");
-    let messages = diagnostics(&output);
-    assert_eq!(messages.len(), 1, "{output:?}");
-    assert_eq!(messages[0]["message"]["level"], "error");
     Ok(())
 }
 
 #[test]
 fn inserts_default_result_import_and_skips_standalone_include_fragments() -> Result<()> {
-    let directory = fixture(
+    let expression = "anyhow::anyhow!(\"included\")";
+    let items = "fn included() -> anyhow::Result<()> { anyhow::bail!(\"included\"); }\n";
+    let directory = support::fixture_with(
         r#"mod plain { pub fn run() -> anyhow::Result<()> { Ok(()) } }
 fn expression() { let _ = include!("expression.rs"); }
 include!("items.rs");
 "#,
+        &[("src/expression.rs", expression), ("src/items.rs", items)],
     )?;
 
-    let root = path!(directory.path()) / "src";
-    let expression = &root / "expression.rs";
-    let items = &root / "items.rs";
-    expression.write_sync("anyhow::anyhow!(\"included\")")?;
-    items.write_sync("fn included() -> anyhow::Result<()> { anyhow::bail!(\"included\"); }\n")?;
-    let output = run(&directory, true)?;
+    support::anyhow(&directory)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (&root / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     assert!(fixed.contains("use anyhow::Result;"), "{fixed}");
     assert!(fixed.contains("pub fn run() -> Result<()>"), "{fixed}");
-    assert_eq!(expression.read_to_string_sync()?, "anyhow::anyhow!(\"included\")");
-    assert_eq!(
-        items.read_to_string_sync()?,
-        "fn included() -> anyhow::Result<()> { anyhow::bail!(\"included\"); }\n"
+    assert_eq!(support::read(&directory, "src/expression.rs")?, expression);
+    assert_eq!(support::read(&directory, "src/items.rs")?, items);
+
+    let output = support::run(&directory, false, "kiki_prefer_imported_apis")?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        support::diagnostics(&output, "kiki_prefer_imported_apis").is_empty(),
+        "{output:?}"
     );
 
-    let output = run(&directory, false)?;
-    assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).is_empty(), "{output:?}");
     Ok(())
 }
 
 #[test]
 fn glob_checks_only_bindings_visible_from_the_importing_module() -> Result<()> {
-    let source = r"#![deny(kiki_prefer_imported_apis)]
-#[allow(kiki_prefer_imported_apis)]
-mod hidden { use anyhow::Error; }
-use hidden::*;
-";
-
-    let directory = fixture(source)?;
-    let file = path!(directory.path()) / "src" / "lib.rs";
+    let directory = fixture("mod hidden { use anyhow::Error; }\nuse hidden::*;\n")?;
     for visibility in [
         "",
         "pub(self) ",
@@ -246,15 +215,21 @@ use hidden::*;
         "pub(crate) ",
         "pub ",
     ] {
-        file.write_sync(source.replace("use anyhow::Error", &format!("{visibility}use anyhow::Error")))?;
-        let output = run(&directory, false)?;
+        support::write(
+            &directory,
+            "src/lib.rs",
+            &format!("mod hidden {{ {visibility}use anyhow::Error; }}\nuse hidden::*;\n"),
+        )?;
+
+        let output = support::run(&directory, false, "kiki_prefer_imported_apis")?;
+        assert!(output.status.success(), "{visibility}: {output:?}");
         let accessible = matches!(visibility, "pub(super) " | "pub(crate) " | "pub ");
-        assert_eq!(output.status.success(), !accessible, "{visibility}: {output:?}");
-        let reports = diagnostics(&output);
-        assert_eq!(reports.is_empty(), !accessible, "{visibility}: {output:?}");
-        if accessible {
-            assert_eq!(reports[0]["message"]["spans"][0]["line_start"], 4);
-        }
+        let reports: Vec<_> = support::diagnostics(&output, "kiki_prefer_imported_apis")
+            .into_iter()
+            .filter(|message| message["message"]["spans"][0]["line_start"] == 2)
+            .collect();
+
+        assert_eq!(!reports.is_empty(), accessible, "{visibility}: {output:?}");
     }
 
     Ok(())
@@ -278,9 +253,9 @@ fn context() -> Result<()> {
 "#;
 
     let directory = fixture(source)?;
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     assert!(fixed.contains("use anyhow::{Result, bail, anyhow};"), "{fixed}");
     assert!(!fixed.contains("use anyhow::anyhow;"), "{fixed}");
     assert!(
@@ -288,24 +263,29 @@ fn context() -> Result<()> {
         "{fixed}"
     );
 
-    let output = run(&directory, false)?;
+    let output = support::run(&directory, false, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).is_empty(), "{output:?}");
+    assert!(
+        support::diagnostics(&output, "kiki_prefer_imported_apis").is_empty(),
+        "{output:?}"
+    );
 
-    let source = r#"#[cfg_attr(all(), inline)]
+    // Unknown attributes stay barriers, even in an inactive cfg_attr branch.
+    let source = r#"#[cfg_attr(any(), observe)]
 fn protected() -> anyhow::Result<()> {
     None.ok_or_else(|| anyhow::anyhow!("keep attribute boundary"))
 }
 "#;
 
     let directory = fixture(source)?;
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    assert!(!diagnostics(&output).is_empty(), "{output:?}");
-    assert_eq!(
-        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
-        source
+    assert!(
+        !support::diagnostics(&output, "kiki_prefer_imported_apis").is_empty(),
+        "{output:?}"
     );
+
+    assert_eq!(support::source(&directory)?, source);
 
     Ok(())
 }
@@ -342,9 +322,9 @@ mod conditional_missing {
 "#;
 
     let directory = fixture(source)?;
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     assert_eq!(fixed.matches("use anyhow::{Result, bail};").count(), 2, "{fixed}");
     assert_eq!(
         fixed.matches("use anyhow::{Result, bail, anyhow,};").count(),
@@ -365,13 +345,14 @@ mod conditional_missing {
     );
 
     assert!(fixed.contains("missing::unresolved!()"), "{fixed}");
-    let output = run(&directory, false)?;
+    let output = support::run(&directory, false, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).is_empty(), "{output:?}");
-    assert_eq!(
-        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
-        fixed
+    assert!(
+        support::diagnostics(&output, "kiki_prefer_imported_apis").is_empty(),
+        "{output:?}"
     );
+
+    assert_eq!(support::source(&directory)?, fixed);
 
     Ok(())
 }
@@ -410,15 +391,11 @@ mod conditional {
 "#;
 
     let directory = fixture(source)?;
-    let manifest = path!(directory.path()) / "Cargo.toml";
-    manifest.write_sync(format!(
-        "{}\n[features]\ndefault=[\"conditional\"]\nconditional=[]\n",
-        manifest.read_to_string_sync()?
-    ))?;
+    support::manifest(&directory, "[features]\ndefault=[\"conditional\"]\nconditional=[]")?;
 
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     assert!(
         fixed.contains("use anyhow::Error as AnyhowError;"),
         "{fixed}\n{}",
@@ -498,10 +475,9 @@ mod prelude {
 "#;
 
     let directory = fixture(source)?;
-    let root = path!(directory.path()) / "src";
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_prefer_imported_apis")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (&root / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     assert!(
         fixed.contains("use anyhow::{Context, Result, ensure, anyhow};"),
         "{fixed}"

@@ -113,4 +113,4 @@ pub fn run(values: &[u8]) -> Option<u8> {
 - 支援：多行 statement 或 item 後方缺空行，以及相鄰 item 之間缺空行，皆以 `MachineApplicable` suggestion 在前一元素結尾所在行之後插入一個換行。CRLF 檔案插入 CRLF。由 `cargo dylint --fix` 套用，規則本身不寫檔，也不呼叫 rustfmt。
 - 只插入換行，不改動其他 token，不刪除既有空行，不移動註解或 attribute。
 - 僅回報、不修正：同一行相鄰的元素，例如 `fn a() {} fn b() {}`。拆行屬於排版決定，不由本規則自動決定。
-- 修正後再次執行不應產生新的診斷。
+- 診斷由共用出口在 crate 層級 emit，不依 item、foreign item 或 module 的 `allow` 調整歸屬。

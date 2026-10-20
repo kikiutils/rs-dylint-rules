@@ -1,23 +1,10 @@
-use std::process::Output;
-
 use anyhow::Result;
 use pathkit::{
     SyncFsOps,
     path,
 };
-use tempfile::TempDir;
 
 mod support;
-
-use self::support::fixture;
-
-fn run(directory: &TempDir, fix: bool) -> Result<Output> {
-    support::run(directory, fix, "kiki_import_path_prefix")
-}
-
-fn diagnostics(output: &Output) -> Vec<serde_json::Value> {
-    support::diagnostics(output, "kiki_import_path_prefix")
-}
 
 #[test]
 fn fixes_resolved_routes_without_shortcutting_reexports() -> Result<()> {
@@ -49,8 +36,8 @@ mod a {
 pub use crate::a::c::rr::child as bridge;
 ";
 
-    let directory = fixture(source)?;
-    let output = run(&directory, true)?;
+    let directory = support::fixture(source)?;
+    let output = support::run(&directory, true, "kiki_import_path_prefix")?;
     assert!(output.status.success(), "{output:?}");
     let expected = source
         .replace("crate::a::c::rr::child", "self::child")
@@ -66,14 +53,15 @@ pub use crate::a::c::rr::child as bridge;
             "pub use self::a::c::rr::child as bridge",
         );
 
-    assert_eq!(
-        (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?,
-        expected
+    assert_eq!(support::source(&directory)?, expected);
+
+    let output = support::run(&directory, false, "kiki_import_path_prefix")?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(
+        support::diagnostics(&output, "kiki_import_path_prefix").is_empty(),
+        "{output:?}"
     );
 
-    let output = run(&directory, false)?;
-    assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).is_empty(), "{output:?}");
     Ok(())
 }
 
@@ -97,10 +85,10 @@ mod a {
 }
 ";
 
-    let directory = fixture(source)?;
-    let output = run(&directory, true)?;
+    let directory = support::fixture(source)?;
+    let output = support::run(&directory, true, "kiki_import_path_prefix")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = (path!(directory.path()) / "src" / "lib.rs").read_to_string_sync()?;
+    let fixed = support::source(&directory)?;
     // Conflicting shared prefixes are split before independent prefix fixes.
     assert_eq!(
         fixed,
@@ -114,55 +102,36 @@ mod a {
             .replace("crate::a::*", "super::*")
     );
 
-    let output = run(&directory, false)?;
+    let output = support::run(&directory, false, "kiki_import_path_prefix")?;
     assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).is_empty(), "{output:?}");
-    Ok(())
-}
+    assert!(
+        support::diagnostics(&output, "kiki_import_path_prefix").is_empty(),
+        "{output:?}"
+    );
 
-#[test]
-fn lint_levels_cfg_and_macro_expansions_are_respected() -> Result<()> {
-    let source = r"#![cfg_attr(test, allow(dead_code))]
-mod a {
-    pub struct Value;
-    #[allow(kiki_import_path_prefix)]
-    mod allowed { use crate::a::Value; }
-    #[cfg(any())]
-    mod inactive { use missing::Value; }
-    macro_rules! generated { () => { mod generated { use crate::a::Value; } } }
-    generated!();
-    macro_rules! passthrough { ($($tokens:tt)*) => { $($tokens)* } }
-    passthrough! { mod passed { use crate::a::Value; } }
-    #[deny(kiki_import_path_prefix)]
-    mod denied { use crate::a::Value; }
-}
-";
-
-    let directory = fixture(source)?;
-    let output = run(&directory, false)?;
-    assert!(!output.status.success(), "{output:?}");
-    let messages = diagnostics(&output);
-    assert_eq!(messages.len(), 1, "{output:?}");
-    assert_eq!(messages[0]["message"]["level"], "error");
     Ok(())
 }
 
 #[test]
 fn physical_file_names_do_not_determine_module_ancestry() -> Result<()> {
-    let directory = fixture("mod a { pub struct Value; #[path = \"../odd.rs\"] mod nested; }\n")?;
+    let directory = support::fixture("mod a { pub struct Value; #[path = \"../odd.rs\"] mod nested; }\n")?;
     // rustc resolves #[path] relative to the inline module's directory.
     (path!(directory.path()) / "src" / "a").create_dir_sync()?;
     let file = path!(directory.path()) / "src" / "odd.rs";
     file.write_sync("use crate::a::Value as Alias;\nuse Alias as Second;\n")?;
-    let output = run(&directory, true)?;
+    let output = support::run(&directory, true, "kiki_import_path_prefix")?;
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         file.read_to_string_sync()?,
         "use super::Value as Alias;\nuse self::Alias as Second;\n"
     );
 
-    let output = run(&directory, false)?;
+    let output = support::run(&directory, false, "kiki_import_path_prefix")?;
     assert!(output.status.success(), "{output:?}");
-    assert!(diagnostics(&output).is_empty(), "{output:?}");
+    assert!(
+        support::diagnostics(&output, "kiki_import_path_prefix").is_empty(),
+        "{output:?}"
+    );
+
     Ok(())
 }

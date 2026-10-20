@@ -17,8 +17,7 @@ use crate::diagnostic::{
 
 // Only layout is changed: a blank line is inserted after the element that needs
 // separation, so comments and attributes stay with the element that follows.
-pub(super) fn analyze(root: &SyntaxNode) -> RuleOutput {
-    let source = root.text().to_string();
+pub(super) fn analyze(root: &SyntaxNode, source: &str) -> RuleOutput {
     let mut output = RuleOutput::default();
 
     for scope in root.descendants().filter(|node| {
@@ -33,7 +32,7 @@ pub(super) fn analyze(root: &SyntaxNode) -> RuleOutput {
     }) {
         let children: Vec<_> = scope.children().collect();
         for pair in children.windows(2) {
-            check_pair(&source, &pair[0], &pair[1], &mut output);
+            check_pair(source, &pair[0], &pair[1], &mut output);
         }
     }
 
@@ -62,7 +61,7 @@ fn check_pair(source: &str, current: &SyntaxNode, next: &SyntaxNode, output: &mu
         "expected a blank line after this multi-line statement"
     };
 
-    let between = &source[usize::from(current_range.end())..usize::from(next.text_range().start())];
+    let between = &source[TextRange::new(current_range.end(), next.text_range().start())];
     let Some(newline) = between.find('\n') else {
         output.report(Diagnostic {
             range: current_range,
@@ -98,10 +97,6 @@ fn check_pair(source: &str, current: &SyntaxNode, next: &SyntaxNode, output: &mu
     });
 }
 
-fn text(source: &str, range: TextRange) -> &str {
-    &source[std::ops::Range::<usize>::from(range)]
-}
-
 // Attributes and comments belong to the element that follows them, so they do
 // not make a single-line element multi-line.
 fn is_multiline(source: &str, node: &SyntaxNode) -> bool {
@@ -115,7 +110,7 @@ fn is_multiline(source: &str, node: &SyntaxNode) -> bool {
         })
         .map_or(node.text_range().start(), |element| element.text_range().start());
 
-    text(source, TextRange::new(start, node.text_range().end())).contains('\n')
+    source[TextRange::new(start, node.text_range().end())].contains('\n')
 }
 
 fn is_element(node: &SyntaxNode) -> bool {

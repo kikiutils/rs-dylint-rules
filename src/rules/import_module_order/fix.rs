@@ -8,17 +8,13 @@ use ra_ap_syntax::{
 };
 
 use super::analysis::Entry;
-use crate::diagnostic::Edit;
+use crate::{
+    diagnostic::Edit,
+    syntax,
+};
 
-// Functions
 pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
-    // An enclosing attribute macro can observe the entire item's token order.
-    // Conservatively treat all enclosing attributes, including inner attributes
-    // and cfg_attr, as barriers until their safety can be established.
-    if scope
-        .ancestors()
-        .any(|ancestor| ancestor.children().any(|node| ast::Attr::can_cast(node.kind())))
-    {
+    if syntax::protected(scope) {
         return None;
     }
 
@@ -70,17 +66,6 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
         }
     }
 
-    let source = scope.text().to_string();
-    let relative = usize::from(range.start() - scope.text_range().start());
-    let line_start = source[..relative].rfind('\n').map_or(0, |offset| offset + 1);
-    let indent = &source[line_start..relative];
-
-    // Same-line declarations need a formatter rather than guessed indentation.
-    if !indent.chars().all(|character| matches!(character, ' ' | '\t')) {
-        return None;
-    }
-
-    let newline = if source.contains("\r\n") { "\r\n" } else { "\n" };
     let mut ordered: Vec<_> = entries.iter().collect();
     ordered.sort_by_key(|entry| entry.group);
     let mut replacement = String::new();
@@ -88,13 +73,11 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
 
     for entry in ordered {
         if let Some(group) = previous {
-            replacement.push_str(newline);
+            replacement.push('\n');
 
             if group != entry.group {
-                replacement.push_str(newline);
+                replacement.push('\n');
             }
-
-            replacement.push_str(indent);
         }
 
         replacement.push_str(&entry.node.text().to_string());

@@ -1,7 +1,7 @@
 mod analysis;
-mod compiler;
+pub(super) mod collect;
 
-pub(super) const RULE: fn(&mut rustc_lint::LintStore) = self::compiler::register;
+rustc_lint_defs::declare_lint! { pub KIKI_IMPORT_PATH_PREFIX, Warn, "use module-relative prefixes for imports within the current crate" }
 
 #[cfg(test)]
 mod tests;

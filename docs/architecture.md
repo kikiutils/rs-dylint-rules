@@ -2,52 +2,73 @@
 
 ## 專案定位
 
-`kiki-rs-dylint-rules` 是單一 Dylint 動態規則庫，產物為 `cdylib`，不提供獨立執行檔或自訂 compiler driver。檢查與自動修正直接使用 `cargo dylint`／`cargo dylint --fix`。
+`kiki-rs-dylint-rules` 是單一 Dylint 動態規則庫，產物為 `cdylib`，不提供獨立執行檔或 compiler driver。檢查與自動修正使用 `cargo dylint`／`cargo dylint --fix`。
 
 ## 模組分工
 
-| 模組 | 職責 |
-| --- | --- |
-| `src/lib.rs` | 提供 Dylint ABI 入口，註冊所有規則。 |
-| `src/rules/mod.rs` | 維護規則註冊函式列表 `RULES`。 |
-| `src/rules/<rule>/` | 每條規則一個目錄，負責語意收集、檢查、診斷及修正提案。 |
-| `src/source.rs` | 記錄 module 來源與共用檔案實例，驗證來源、解析原文 CST，轉換 rustc spans 與磁碟原文位元組偏移。路徑與檔案讀取統一使用 pathkit。 |
-| `src/diagnostic.rs` | 定義規則內部的診斷與修正資料，統一發出原生 lint 診斷。 |
-| `src/syntax.rs` | 共用 attributes、條件邊界與註解判斷；規則各自保留搬移、拆分與 derive helpers 的額外限制。 |
-| `src/test_support.rs` | 僅於單元測試載入的共用 helper，不參與正式 lint 執行。 |
-| `tests/` | 驗證實際 Dylint 診斷、lint 層級及 `--fix` 行為。 |
+| 模組 | 責任 |
+|---|---|
+| `src/lib.rs` | 從 `rules::RULES` 註冊五個 lint，並註冊唯一的 `KikiRules` late pass。 |
+| `src/pass.rs` | 收集模組來源，將 HIR 事件分派給 collectors，於 crate 結束時逐檔分析與 emit。 |
+| `src/workspace.rs` | `Workspace`：快取來源路徑，記錄 crate 載入的檔案與模組來源（含共用檔案判定）。 |
+| `src/source.rs` | 讀取並解析單一來源檔，處理 BOM／CRLF 位移與 span 換算。 |
+| `src/facts.rs` | 依實體路徑分檔保存各規則的 compiler facts，每筆附 module 編號與 HirId。 |
+| `src/syntax.rs` | 共用 attributes 保護、條件邊界、註解與涵蓋節點 helper。 |
+| `src/diagnostic.rs` | 語法層的診斷與 edits，以及共用的 crate 層級 emit。 |
+| `src/rules/*/collect.rs` | 收集 rustc 語意並銜接各規則的分析。`statement_padding` 不需 facts，沒有 collector，其分析入口在 `mod.rs`。 |
+| `src/rules/*/analysis.rs` | 依 CST、原文與 compiler facts 產生診斷及安全 edits。 |
+| `src/rules/prefer_imported_apis/resolution.rs` | 使用 rustc 的 binding、reference、namespace 與 glob 資訊判斷名稱安全性。 |
+| `src/test_support.rs` | analysis 單元測試套用 edits 的 helper。 |
+| `tests/support/mod.rs` | 整合測試共用 fixture、Cargo 執行及 JSON 診斷判讀。 |
 
-## 規則註冊
+## 規則註冊與順序
 
-每條規則的 `mod.rs` 匯出註冊函式常數 `RULE`：
+`src/rules/mod.rs` 的 `RULES` 是 lint 註冊及逐檔分析、emit 順序的唯一來源：
 
-```rust
-pub(super) const RULE: fn(&mut rustc_lint::LintStore) = self::compiler::register;
-```
+1. `prefer_imported_apis`
+2. `import_path_prefix`
+3. `import_module_order`
+4. `grouped_derive_order`
+5. `statement_padding`
 
-在 `src/rules/mod.rs` 宣告模組並將 `RULE` 加入 `RULES`。`src/lib.rs` 的 `register_lints` 依序呼叫這些函式，由各規則自行註冊 lint 與 compiler pass；新增規則不需修改共用來源處理。
+順序只決定診斷的輸出先後，以及同一輪修正重疊時誰先套用；`cargo fix` 會重跑直到穩定，最終結果與順序無關。
+
+`Rule` 提供 lint、suggestion 說明及逐檔分析。HIR 收集由 `Collectors` 上與 lint pass 同名的 `check_*` 方法轉交給需要的 collector，與 `RULES` 順序無關。診斷統一由 crate 層級輸出，不建立 item 或 module 的 lint level 歸屬機制。
 
 ## 執行流程
 
-語意以 rustc 為準；`ra_ap_syntax` 僅用於原文 CST 解析，不建立 rust-analyzer 語意資料庫，也不自行探索模組關係。
+語意以 rustc 為準；`ra_ap_syntax` 僅解析原文 CST，不建立 rust-analyzer 語意資料庫，也不自行探索模組關係。
 
-1. Dylint 取得、編譯並載入規則庫，使用相同 nightly 的 driver 執行 Cargo 分析。
-2. rustc 決定當次 target、features 與 cfg 下實際載入的來源。規則僅處理 canonicalize 後位於 compiler 工作目錄內的實體來源，不遍歷全部 `.rs` 檔案。
-3. 規則收集語意，使用原文 CST 檢查各作用域，將結果轉成標準 rustc lint 診斷。lint attributes 控制診斷層級。
-4. 可安全修正時，診斷附上 `MachineApplicable` multipart suggestion；指定 `--fix` 時，由標準 Cargo fix 流程套用。
+1. Dylint 以相同 nightly 的 driver 執行 Cargo 分析，rustc 決定 target、features 與 cfg 下實際載入的來源。
+2. `check_mod` 記錄模組來源。item、path、expression、generic parameter 與 foreign item 的 HIR 事件交給 `Collectors` 的對應 `check_*` 方法，供各 collector 收集語意。
+3. 來源路徑以 rustc `SourceFile` 指標為 key 快取，包含無法使用的結果。工作目錄只 canonicalize 一次，僅納入位於該目錄內的實體來源。
+4. facts 依實體路徑分檔，每筆保留 module 編號與 HirId。分析前逐筆檢查來源是否屬於該模組。
+5. `check_crate_post` 逐檔以 `Source::load` 讀取並解析，每個路徑只處理一次，再按 `RULES` 順序執行各規則的 analysis 與 emit。
+6. `RuleOutput` 統一由 crate 層級產生標準 rustc lint 與 `MachineApplicable` multipart suggestions。指定 `--fix` 時，由 Cargo fix 套用。
 
-規則不直接寫檔，不建立額外報告協定，也不進行跨平台或多環境修正仲裁。workspace、target 與 features 由使用者透過 Dylint／Cargo 參數指定，不自動補充其他平台或窮舉 feature 組合。
+同一次編譯中的各規則均分析 rustc 載入的原文；規則不自行套用 edits 或將中間修正結果交給下一條規則。
 
-## 執行限制與副作用
+## 原文與診斷位置
 
-- 固定使用 `nightly-2026-10-01` 與 rustc private API；升級 nightly 需適配 API 並重新編譯規則庫。
-- 分析會執行 build scripts 與 proc macros，Cargo 也可能更新 lockfile；只對可信任專案執行。
-- 目標專案須具備所選 target 的標準函式庫、原生依賴與 SDK；編譯失敗時，不保證能產生完整規則診斷。
-- 不檢查當次未啟用的程式碼，也不保證修正在其他 target 或 feature 組合下相容。
-- 僅分析登記為 module 原始來源的檔案，略過獨立 `include!` 片段。同一實體來源被載入成多個 module 時仍提供診斷，但不自動修正，避免改變其他實例的解析結果。
-- 不執行 rustfmt 或 Clippy。`--fix` 使用標準 Cargo fix 流程，可能同時套用 rustc 的其他修正建議，並非只限本規則。
+- 來源比對會移除 UTF-8 BOM 並將 CRLF 正規化為 LF，與 rustc 載入的文字比較。
+- CST 解析將開頭 BOM 替換成等長的三個空白，保留原始 byte offsets。`Source.text` 保存原文，供 analysis 直接切片。
+- facts 透過 `original_relative_byte_pos` 對應 CST；emit 透過 `normalized_byte_pos` 轉回 rustc spans。
+- 讀檔失敗、來源已變動或 CST 解析失敗時，輸出 warning 並略過該檔案。每個路徑只載入一次，同一檔案不會因五個規則而重複警告。
 
-## 上游參考
+## 分析範圍
 
-- [Dylint](https://github.com/trailofbits/dylint)
-- [dylint_linting API](https://docs.rs/dylint_linting/6.2.0/dylint_linting/)
+`statement_padding` 檢查模組來源整份 CST，包含 cfg 停用程式碼。其他四條規則僅根據啟用中的 compiler facts 分析。診斷不查找 item owner，也不針對 `allow` 建立額外處理；名稱解析所需的 HirId 仍保留。
+
+## 安全邊界
+
+- 僅分析登記為 module 原始來源的檔案，略過獨立 `include!` 片段。
+- 相同實體範圍被不同 module 載入時可提供診斷，但整份檔案不提供 fix。一般 inline module 的範圍不同，不會因此停用 fix。
+- `syntax::protected` 共用已知 builtin／tool attribute 安全清單；`cfg_attr` 遞迴檢查所有分支，未知 attributes 保留屏障。derive helpers 另要求相同 item 有對應的已解析 derive。
+- 搬移或拆分 imports 仍須保留各規則的註解、cfg、名稱解析與 `expect` 保護。安全 attribute 不代表可以任意搬移帶 attributes 的 item。
+- fixes 只處理語法與語意，排版交給使用者的 rustfmt；規則不呼叫 rustfmt、Clippy 或直接寫檔。
+
+## 執行限制
+
+固定使用 `nightly-2026-10-01` 與 rustc private API。升級 nightly 需適配 API 並重新編譯。分析仍會執行目標專案的 build scripts 與 proc macros；目標專案須具備所選 target 的標準函式庫及原生依賴。workspace、target 與 features 由使用者指定，不自動窮舉其他環境。
+
+測試以獨立功能、診斷、安全屏障與 edit 結果為單位，不建立 lint fix 與 rustfmt 交替執行的驗收流程。

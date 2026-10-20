@@ -3,11 +3,13 @@ use std::collections::{
     BTreeSet,
 };
 
+use kikiutils::types::fx_collections::FxHashSet;
 use ra_ap_syntax::{
     AstNode,
     SyntaxKind,
     SyntaxNode,
     TextRange,
+    TextSize,
     ast,
 };
 
@@ -22,14 +24,10 @@ use crate::{
         Fix,
         RuleOutput,
     },
-    syntax::{
-        self,
-        has_comments,
-        protected,
-    },
+    syntax,
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) enum Kind {
     Import { name: String },
     Glob,
@@ -38,9 +36,8 @@ pub(super) enum Kind {
     Macro,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct Fact {
-    pub(super) range: TextRange,
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(super) struct ApiUse {
     pub(super) api: Api,
     pub(super) kind: Kind,
 }
@@ -98,45 +95,37 @@ fn conditional_import(import: &Import) -> bool {
 }
 
 fn scope(node: &SyntaxNode) -> Option<SyntaxNode> {
-    node.ancestors().find(|node| {
-        matches!(
-            node.kind(),
-            SyntaxKind::STMT_LIST | SyntaxKind::ITEM_LIST | SyntaxKind::SOURCE_FILE
-        )
-    })
+    node.ancestors().find(syntax::is_scope)
 }
 
 fn visible_scopes(node: &SyntaxNode) -> Vec<SyntaxNode> {
     let mut scopes = Vec::new();
-    for node in node.ancestors() {
-        if matches!(
-            node.kind(),
-            SyntaxKind::STMT_LIST | SyntaxKind::ITEM_LIST | SyntaxKind::SOURCE_FILE
-        ) {
-            let module = node.kind() != SyntaxKind::STMT_LIST;
-            scopes.push(node);
-            if module {
-                break;
-            }
+    for node in node.ancestors().filter(syntax::is_scope) {
+        let module = node.kind() != SyntaxKind::STMT_LIST;
+        scopes.push(node);
+        if module {
+            break;
         }
     }
 
     scopes
 }
 
-fn text(root: &SyntaxNode, range: TextRange) -> String {
-    root.text().slice(range - root.text_range().start()).to_string()
-}
-
-pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(NameRequest<'_>) -> bool) -> RuleOutput {
+pub(super) fn analyze<'a>(
+    root: &SyntaxNode,
+    source: &str,
+    facts: impl IntoIterator<Item = (TextRange, &'a ApiUse)>,
+    resolve_name: impl Fn(NameRequest<'_>) -> bool,
+) -> RuleOutput {
     let mut output = RuleOutput::default();
     let mut imports = Vec::new();
     let mut accesses = Vec::new();
-    for fact in facts {
+    let mut seen = FxHashSet::default();
+    for (fact_range, fact) in facts.into_iter().filter(|entry| seen.insert(*entry)) {
         match &fact.kind {
             Kind::Import { name } => {
                 let Some(tree) = root
-                    .covering_element(fact.range)
+                    .covering_element(fact_range)
                     .ancestors()
                     .find_map(ast::UseTree::cast)
                 else {
@@ -162,10 +151,10 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                 } else if !output
                     .issues
                     .iter()
-                    .any(|issue| issue.diagnostics[0].range == fact.range)
+                    .any(|issue| issue.diagnostics[0].range == fact_range)
                 {
                     output.report(Diagnostic {
-                        range: fact.range,
+                        range: fact_range,
                         message: format!(
                             "import this anyhow API as `{}` without an unsupported alias",
                             fact.api.name()
@@ -175,26 +164,26 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
             },
             Kind::CrateAlias => {
                 if root
-                    .covering_element(fact.range)
+                    .covering_element(fact_range)
                     .ancestors()
                     .filter_map(ast::ExternCrate::cast)
-                    .any(|item| item.syntax().text_range().contains_range(fact.range))
+                    .any(|item| item.syntax().text_range().contains_range(fact_range))
                 {
                     output.report(Diagnostic {
-                        range: fact.range,
+                        range: fact_range,
                         message: "do not alias the anyhow crate".to_owned(),
                     });
                 }
             },
             Kind::Glob => {
                 if root
-                    .covering_element(fact.range)
+                    .covering_element(fact_range)
                     .ancestors()
                     .filter_map(ast::Use::cast)
-                    .any(|item| item.syntax().text_range().contains_range(fact.range))
+                    .any(|item| item.syntax().text_range().contains_range(fact_range))
                 {
                     output.report(Diagnostic {
-                        range: fact.range,
+                        range: fact_range,
                         message: format!(
                             "this glob imports an anyhow API without its required name `{}`; use explicit imports",
                             fact.api.name()
@@ -204,11 +193,13 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
             },
             Kind::Access | Kind::Macro => {
                 let (node, range) = if fact.kind == Kind::Macro {
-                    let Some(call) = root.descendants().filter_map(ast::MacroCall::cast).find(|call| {
-                        call.syntax().text_range().start() == fact.range.start()
-                            && (fact.range.contains_range(call.syntax().text_range())
-                                || call.syntax().text_range().contains_range(fact.range))
-                    }) else {
+                    // The call-site span may include the trailing semicolon.
+                    // Start inside its path so the MacroCall remains an ancestor.
+                    let start = TextRange::new(fact_range.start(), fact_range.start() + TextSize::from(1));
+
+                    let Some(call) = syntax::enclosing::<ast::MacroCall>(root, start)
+                        .filter(|call| call.syntax().text_range().start() == fact_range.start())
+                    else {
                         continue;
                     };
 
@@ -216,10 +207,10 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     (path.syntax().clone(), path.syntax().text_range())
                 } else {
                     let Some(path) = root
-                        .covering_element(fact.range)
+                        .covering_element(fact_range)
                         .ancestors()
                         .filter_map(ast::Path::cast)
-                        .find(|path| path.syntax().text_range().start() == fact.range.start())
+                        .find(|path| path.syntax().text_range().start() == fact_range.start())
                     else {
                         continue;
                     };
@@ -228,11 +219,11 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                         continue;
                     }
 
-                    (path.syntax().clone(), fact.range)
+                    (path.syntax().clone(), fact_range)
                 };
 
                 let Some(scope) = scope(&node) else { continue };
-                let qualified = text(root, range).contains("::");
+                let qualified = source[range].contains("::");
                 if !accesses
                     .iter()
                     .any(|access: &Access| access.range == range && access.api == fact.api)
@@ -262,17 +253,11 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
 
         // Do not lift an import out of a conditional function/block/impl.
         // Attributes on the module itself guard both its imports and uses.
-        let crosses_cfg = access.node.ancestors().take_while(|node| *node != module).any(|node| {
-            node.children()
-                .filter_map(ast::Attr::cast)
-                .any(|attr| syntax::conditional_attribute(&attr))
-        });
-
-        if crosses_cfg {
+        if syntax::crosses_conditional(&access.node, &module) {
             continue;
         }
 
-        let path = text(root, access.range);
+        let path = &source[access.range];
         let Some((prefix, leaf)) = path.rsplit_once("::") else {
             continue;
         };
@@ -294,7 +279,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                         tree.use_tree_list().is_some()
                             && tree.path().is_some_and(|path| path.syntax().text() == prefix)
                             && tree.syntax().text_range().end() <= access.range.start()
-                            && !has_comments(root, tree.syntax().text_range())
+                            && !syntax::has_comments(root, tree.syntax().text_range())
                             && tree.syntax().ancestors().filter_map(ast::Use::cast).all(|item| {
                                 !item.syntax().children().any(|child| ast::Attr::can_cast(child.kind()))
                                     && !item
@@ -318,7 +303,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
         let scope = access.target.scope();
         if !matches!(access.api, Api::Anyhow | Api::Bail | Api::Ensure)
             || scope.kind() == SyntaxKind::STMT_LIST
-            || text(root, access.range).rsplit("::").next().map(str::trim) != Some(access.api.name())
+            || leaf(&source[access.range]) != access.api.name()
         {
             continue;
         }
@@ -345,7 +330,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
     let mut groups = FixGroups::new();
     for access in &accesses {
         if !access.qualified {
-            let name = text(root, access.range).trim_start_matches("r#").to_owned();
+            let name = source[access.range].trim_start_matches("r#").to_owned();
             let scopes = visible_scopes(&access.node);
             let matching: Vec<_> = imports
                 .iter()
@@ -380,7 +365,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
         let mut additions = BTreeMap::new();
         let mut first_issue = None;
         for (index, access) in group {
-            if protected(&access.node) || has_comments(root, access.range) {
+            if syntax::protected(&access.node) || syntax::has_comments(root, access.range) {
                 continue;
             }
 
@@ -408,10 +393,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                 continue;
             }
 
-            if existing.is_none()
-                && access.api != Api::Error
-                && text(root, access.range).rsplit("::").next().map(str::trim) != Some(name)
-            {
+            if existing.is_none() && access.api != Api::Error && leaf(&source[access.range]) != name {
                 // Do not introduce a macro alias or "Result as Result" while
                 // fixing a route that already uses a re-exported alias.
                 continue;
@@ -419,7 +401,7 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
 
             if existing.is_none() {
                 additions
-                    .entry((access.api, text(root, access.range)))
+                    .entry((access.api, &source[access.range]))
                     .or_insert_with(|| name.to_owned());
             }
 
@@ -447,11 +429,17 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                 continue;
             }
 
+            let preamble_end = scope
+                .children()
+                .find(|node| !ast::AnyAttr::can_cast(node.kind()))
+                .map_or(scope.text_range().end(), |node| node.text_range().start());
+
+            if syntax::has_comments(root, TextRange::new(scope.text_range().start(), preamble_end)) {
+                continue;
+            }
+
             let offset = if scope.kind() == SyntaxKind::SOURCE_FILE {
-                scope
-                    .children()
-                    .find(|node| !ast::AnyAttr::can_cast(node.kind()))
-                    .map_or(scope.text_range().end(), |node| node.text_range().start())
+                preamble_end
             } else {
                 let Some(token) = scope.first_token() else { continue };
                 scope
@@ -459,21 +447,6 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
                     .filter_map(ast::Attr::cast)
                     .last()
                     .map_or(token.text_range().end(), |attr| attr.syntax().text_range().end())
-            };
-
-            let preamble_end = scope
-                .children()
-                .find(|node| !ast::AnyAttr::can_cast(node.kind()))
-                .map_or(scope.text_range().end(), |node| node.text_range().start());
-
-            if has_comments(root, TextRange::new(scope.text_range().start(), preamble_end)) {
-                continue;
-            }
-
-            let newline = if root.text().to_string().contains("\r\n") {
-                "\r\n"
-            } else {
-                "\n"
             };
 
             let mut statements = String::new();
@@ -486,18 +459,18 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
 
                 names.push(name.clone());
                 statements.push_str("use ");
-                statements.push_str(&path);
-                if path.rsplit("::").next().map(str::trim) != Some(name.as_str()) {
+                statements.push_str(path);
+                if leaf(path) != name {
                     statements.push_str(" as ");
                     statements.push_str(&name);
                 }
 
                 statements.push(';');
-                statements.push_str(newline);
+                statements.push('\n');
             }
 
             if scope.kind() != SyntaxKind::SOURCE_FILE {
-                statements.insert_str(0, newline);
+                statements.insert(0, '\n');
             }
 
             edits.push(Edit {
@@ -512,19 +485,16 @@ pub(super) fn analyze(root: &SyntaxNode, facts: &[Fact], resolve_name: impl Fn(N
     output
 }
 
+// The last path segment, as written.
+fn leaf(path: &str) -> &str {
+    path.rsplit_once("::").map_or(path, |(_, leaf)| leaf).trim()
+}
+
 fn safe_target(access: &Access, existing: Option<&Import>) -> bool {
     // A conditional item initializer without a block offers no local place to
     // insert an import. Do not lift a new binding outside that cfg boundary.
     let insertion_scope = access.target.scope();
     !(existing.is_none()
         && insertion_scope.kind() != SyntaxKind::STMT_LIST
-        && access
-            .node
-            .ancestors()
-            .take_while(|node| *node != insertion_scope)
-            .any(|node| {
-                node.children()
-                    .filter_map(ast::Attr::cast)
-                    .any(|attr| syntax::conditional_attribute(&attr))
-            }))
+        && syntax::crosses_conditional(&access.node, &insertion_scope))
 }

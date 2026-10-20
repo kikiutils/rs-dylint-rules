@@ -10,11 +10,13 @@ use rustc_hir::{
     },
 };
 use rustc_lint::LateContext;
+use rustc_span::def_id::DefId;
 
 use super::{
     Api,
-    compiler::api,
+    api,
 };
+use crate::workspace::Workspace;
 
 pub(super) struct NameRequest<'a> {
     pub(super) at: TextRange,
@@ -71,7 +73,7 @@ fn ancestry(cx: &LateContext<'_>, id: hir::HirId) -> Vec<hir::HirId> {
 }
 
 impl Names {
-    pub(super) fn glob(&mut self, cx: &LateContext<'_>, definition: rustc_span::def_id::DefId) {
+    pub(super) fn glob(&mut self, cx: &LateContext<'_>, definition: DefId) {
         if let Some(local) = definition.as_local() {
             self.glob_sources.insert(cx.tcx.local_def_id_to_hir_id(local));
         }
@@ -92,11 +94,7 @@ impl Names {
         self.bindings.push(Name {
             name: name.to_owned(),
             namespace,
-            api: if let Res::Def(_, definition) = res {
-                api(cx, definition)
-            } else {
-                None
-            },
+            api: res.opt_def_id().and_then(|definition| api(cx, definition)),
             scope: lexical_scope(cx, id),
             module: module(cx, id),
         });
@@ -133,17 +131,19 @@ impl Names {
         self.references.push(Name {
             name,
             namespace,
-            api: if let Res::Def(_, definition) = resolution {
-                api(cx, definition)
-            } else {
-                None
-            },
+            api: resolution.opt_def_id().and_then(|definition| api(cx, definition)),
             scope: id,
             module: module(cx, id),
         });
     }
 
-    pub(super) fn safe(&self, cx: &LateContext<'_>, id: hir::HirId, request: &NameRequest<'_>) -> bool {
+    pub(super) fn safe(
+        &self,
+        cx: &LateContext<'_>,
+        workspace: &Workspace,
+        id: hir::HirId,
+        request: &NameRequest<'_>,
+    ) -> bool {
         let namespace = match request.api {
             Api::Anyhow | Api::Bail | Api::Ensure => Namespace::MacroNS,
             _ => Namespace::TypeNS,
@@ -152,16 +152,18 @@ impl Names {
         let own_module = module(cx, id);
         let parents = ancestry(cx, id);
         let target = if request.module_target {
-            own_module
+            Some(own_module)
         } else {
-            let Some(target) = cx.tcx.hir_parent_iter(id).find_map(|(id, node)| {
+            cx.tcx.hir_parent_iter(id).find_map(|(id, node)| {
                 let hir::Node::Block(block) = node else { return None };
-                crate::source::locate(cx, block.span).and_then(|(_, range)| (range == request.target).then_some(id))
-            }) else {
-                return false;
-            };
+                workspace
+                    .locate_known(cx, block.span)
+                    .and_then(|(_, range)| (range == request.target).then_some(id))
+            })
+        };
 
-            target
+        let Some(target) = target else {
+            return false;
         };
 
         // A module import can flow through another scope's glob, including
