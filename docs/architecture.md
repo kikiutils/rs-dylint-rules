@@ -41,7 +41,7 @@
 
 1. Dylint 以相同 nightly 的 driver 執行 Cargo 分析，rustc 決定 target、features 與 cfg 下實際載入的來源。
 2. `check_mod` 記錄模組來源。item、path、expression、generic parameter 與 foreign item 的 HIR 事件交給 `Collectors` 的對應 `check_*` 方法，供各 collector 收集語意。
-3. 來源路徑以 rustc `SourceFile` 指標為 key 快取，包含無法使用的結果。工作目錄只 canonicalize 一次，僅納入位於該目錄內的實體來源。
+3. 來源路徑以 rustc `SourceFile` 的起始位置為 key 快取，包含無法使用的結果。工作目錄只 canonicalize 一次，僅納入位於該目錄內的實體來源。
 4. facts 依實體路徑分檔，每筆保留 module 編號與 HirId。分析前逐筆檢查來源是否屬於該模組。
 5. `check_crate_post` 逐檔以 `Source::load` 讀取並解析，每個路徑只處理一次，再按 `RULES` 順序執行各規則的 analysis 與 emit。
 6. `RuleOutput` 統一由 crate 層級產生標準 rustc lint 與 `MachineApplicable` multipart suggestions。指定 `--fix` 時，由 Cargo fix 套用。
@@ -63,7 +63,7 @@
 
 - 僅分析登記為 module 原始來源的檔案，略過獨立 `include!` 片段。
 - 相同實體範圍被不同 module 載入時可提供診斷，但整份檔案不提供 fix。一般 inline module 的範圍不同，不會因此停用 fix。
-- `syntax::protected` 共用已知 builtin／tool attribute 安全清單；`cfg_attr` 遞迴檢查所有分支，未知 attributes 保留屏障。derive helpers 另要求相同 item 有對應的已解析 derive。
+- `syntax::protected` 共用已知 builtin／tool attribute 安全清單（另含不讀取 derive 的 serde_with `skip_serializing_none`）；`cfg_attr` 遞迴檢查所有分支，未知 attributes 保留屏障。derive helpers 另要求相同 item 有對應的已解析 derive。
 - 搬移或拆分 imports 仍須保留各規則的註解、cfg、名稱解析與 `expect` 保護。安全 attribute 不代表可以任意搬移帶 attributes 的 item。
 - fixes 只處理語法與語意，排版交給使用者的 rustfmt；規則不呼叫 rustfmt、Clippy 或直接寫檔。
 

@@ -94,8 +94,8 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 - 已使用短名稱但對應 import 位於下方時，僅診斷，不搬動既有 imports。
 - 違規 aliases、公開重新匯出與含有不合規名稱的 glob 目前僅診斷，不自動重新命名或展開，避免漏改其他檔案、巨集及對外 API。
 - 若原限定路徑使用了重新匯出的別名，且新增 import 需要引入被禁止的 alias，僅診斷；已有可重用的合法 import 時仍可替換使用點。
-- 替換範圍有註解、使用點或外層帶有未知 attributes，或新增檔案頂層 import 會插到既有前置註解與 item 之間時，僅診斷。
-- 共用安全 attribute 清單見[架構](../architecture.md#安全邊界)，包含 `feature`、`inline` 與已知 tool attributes。`cfg`、`doc`、`deprecated`、`must_use`、`non_exhaustive` 與 `repr` 不阻擋修正；`cfg_attr` 遞迴檢查，內含 attributes 全部安全才放行；有未知 attribute macro 時仍只診斷。
+- 替換範圍有註解、使用點或外層帶有共用安全清單以外的 attributes，或新增檔案頂層 import 會插到既有前置註解與 item 之間時，僅診斷。
+- 共用安全 attribute 清單（見[架構](../architecture.md#安全邊界)）不阻擋修正；其他 attributes 可能是 attribute macro，仍只診斷。
 - 依 rustc 已解析的名稱空間、作用域、imports、型別參數與巨集展開產物檢查衝突；其他作用域的同名項目、不同名稱空間的 binding，以及無關的 derives／巨集呼叫不直接阻擋修正。不支援自行定義或以 `#[macro_use]` 引入與指定 anyhow 巨集同名的其他巨集，不追蹤其 textual scope 或匯出傳播。
 - 檢查新增 import 是否捕獲原有型別路徑；無法確認安全時僅診斷。修正只替換已解析的 API 路徑並新增必要 imports，其餘排版交由 rustfmt。
 - module 被其他作用域以 glob 匯入時，不在該 module 新增或補入 import，避免改變 glob 使用端的名稱解析；單純含有子模組不阻擋修正。重用既有 import 不受此限制。
@@ -112,4 +112,4 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 
 已在 `nightly-2026-10-01` 與 anyhow `1.0.104` 驗證；未鎖定使用端的 anyhow 版本，若未來版本改變定義結構，須重新查核。
 
-API 來源辨識與 `Api` 定義位於規則的 `mod.rs`，collector 與名稱解析共用此入口。facts 以 set 去重並保留 module 歸屬；analysis 借用逐檔 facts，不複製整份 facts。macro call 由呼叫起點的 CST 祖先定位，保留 call-site 包含分號的情況。
+API 來源辨識與 `Api` 定義位於規則的 `mod.rs`，collector 與名稱解析共用此入口。facts 依檔案保存並保留 module 歸屬，analysis 借用逐檔 facts 並在分析時去重。macro call 由呼叫起點的 CST 祖先定位，保留 call-site 包含分號的情況。

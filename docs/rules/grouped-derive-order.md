@@ -104,7 +104,7 @@ struct Value(u32);
 
 - 無法確認所有項目均為支援之 derive 時，略過該列表，不猜測巨集來源，也不排序剩餘的已知子區段。
 - 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
-- 共用安全 attribute 清單見[架構](../architecture.md#安全邊界)，包含 `feature`、`inline` 與已知 tool attributes。允許 `cfg`、`doc`、`deprecated`、`must_use`、`non_exhaustive` 與 `repr` attributes。定義自身的 `serde`、`is_empty`、`strum` helper attributes，須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。`cfg_attr` 內含 attributes 全部為安全內建項目時可修正；未知 attributes 與外層 helper 同名 attributes 仍只診斷、不修正，避免改變 attribute macro 的輸入。
+- 共用安全 attribute 清單（見[架構](../architecture.md#安全邊界)）不阻擋修正。定義自身的 `serde`、`is_empty`、`strum` helper attributes，須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。其他 attributes 與外層 helper 同名 attributes 仍只診斷、不修正，避免改變 attribute macro 的輸入。
 - 無法編譯或無法可靠對應原文與 compiler expansion 的程式碼，不保證能產生本規則的診斷。
 
 ## Auto-fix
@@ -112,8 +112,8 @@ struct Value(u32);
 - 只有所有項目皆確認為支援之 derive，且沒有上述修正障礙的列表，才提供 `MachineApplicable` suggestion。
 - 僅替換該 attribute 括號內的列表，保留各 derive 路徑與 alias 的原文及 attribute 外的內容；列表直接以 `", "` 串接，不保留原有尾隨逗號，換行、縮排與尾逗號交由 rustfmt 處理。
 - 不呼叫 rustfmt，不調整 attributes 的位置，不合併或拆分列表，也不對未列入支援清單的第三方／未知 derive 提供自動排序。
-- 此獨立處理保證僅限本規則；後續 rustfmt 若啟用 `merge_derives`，仍可能合併多個 attributes。本 repo 目前啟用該選項，如需整條工具鏈保留列表邊界，須另行調整 formatter 設定，本規則不代為修改。
-- 由 `cargo dylint --fix` 套用修正；標準 Cargo fix 流程也可能套用 rustc 的其他修正建議。
+- 列表邊界只在本規則內保留；本 repo 的 rustfmt 啟用 `merge_derives`，之後仍可能合併多個 attributes。
+- 由 `cargo dylint --fix` 套用修正。
 
 ### 安全性依據
 

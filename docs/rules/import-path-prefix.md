@@ -8,8 +8,7 @@
 
 - 檢查對象為所有可見性的 imports（`use`、`pub use` 與各種 `pub(...) use`）中，自身 crate 的來源路徑。
 - 檢查 Cargo／rustc 在當次 target、features 與 cfg 下實際載入的自有 Rust 來源。
-- 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置。
-- 遞迴檢查各作用域；涉及名稱、路徑或型別時，以 rustc 的實際解析結果為準。
+- 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置；路徑以 rustc 的實際解析結果為準。
 - 未啟用的程式碼、rustdoc 程式碼區塊與巨集展開產生的 imports 不檢查；不改寫巨集輸入。絕對路徑 `::...` 目前略過。
 
 ## 規則
@@ -153,7 +152,7 @@ use super::super::super::other::OtherType;
 ## 例外
 
 - 函式或一般區塊內宣告、匯入的局部名稱，不一定屬於所屬 module 的命名空間；若加入 `self::` 等前綴會改變解析結果，不得套用模組前綴規則。
-- 無前綴路徑只有在 rustc 確認其為自身 crate 的項目，且目前 module 存在相同名稱、相同解析結果的 binding 時才檢查；無法確認的局部 binding 不猜測。
+- 無前綴路徑只有在 rustc 確認其為自身 crate 的項目，且目前 module 存在相同名稱、相同解析結果的 binding 時才檢查；該 import 自身產生的 binding 不算數，因此 `pub(crate) use my_macro;` 這類 `macro_rules!` re-export 不檢查。無法確認的局部 binding 不猜測。
 - 無法可靠解析路徑的情況屬於實作限制，不代表允許使用不符合規則的前綴。
 
 ## Auto-fix
@@ -164,7 +163,7 @@ use super::super::super::other::OtherType;
 - 保留 aliases、可見性、attributes 與註解，不改變匯入目標。
 - 支援一般 imports、aliases、glob 與群組內可獨立替換的前綴。共用前綴的各分支若要求不同修正，或替換必須跨越群組大括號，將無註解的 use tree 拆成獨立 imports，依 rustc 已確認的各分支解析結果同步修正前綴；保留可見性、aliases、glob 與安全 attributes。含註解或自身帶有 `expect`（包含巢狀 `cfg_attr`）的分組不拆分，避免改變註解歸屬或複製 lint expectations。
 - 單獨匯入前綴所指的 module 本身時，若修正需要改寫成 `self::{self as Alias}` 或 `super::{self as Alias}` 等群組形式，目前僅診斷。
-- 替換區段含有註解，或 import／同份原文的外層作用域帶有未知 attributes 時，僅診斷，避免改變註解或 attribute macro 的輸入。共用清單中的安全 builtin／tool attributes（包含 `cfg`、`feature`、`inline`、`repr`、`path`）不阻擋原地前綴修正；`cfg_attr` 遞迴檢查其內所有 attributes，全部安全才放行；可能啟用未知 attribute macro 時仍僅診斷。
+- 替換區段含有註解，或 import／同份原文的外層作用域帶有共用安全清單以外的 attributes 時，僅診斷，避免改變註解或 attribute macro 的輸入。
 - 不靠檔案目錄深度猜測 `super::` 數量；以 rustc 提供的 module 結構為準，`#[path]` 本身不阻擋修正。巨集或其他情況若無法確認 module 結構與解析結果，不自動修正。
 
 ### 完成進度

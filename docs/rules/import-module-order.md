@@ -8,9 +8,8 @@
 
 - 檢查對象為所有可見性的 imports 與外部模組宣告（`mod name;`），包含標準函式庫、第三方 crate 與自身模組 imports。
 - 僅處理 Cargo／rustc 在當次 target、features 與 cfg 下實際載入、canonicalize 後位於 compiler 工作目錄內的實體來源。不依固定目錄、`.rs` 副檔名或 Git 忽略規則篩選。
-- 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置。
-- 遞迴檢查各作用域；涉及名稱、路徑或型別時，以 rustc 的實際解析結果為準。
-- 未啟用的程式碼不檢查；rustdoc 程式碼區塊與巨集相關支援範圍由各規則另行說明。
+- 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置；imports 的來源分組以 rustc 的實際解析結果為準。
+- 未啟用的程式碼、rustdoc 程式碼區塊、巨集輸入與展開產物不檢查；獨立 `include!` 片段略過。
 
 ## 規則
 
@@ -77,17 +76,14 @@ use std::sync::Arc;
 - 明確標記 `#[cfg(test)]` 或含有必要 `test` 條件之 `#[cfg(all(...))]` 的外部模組宣告不參與分區順序，允許保留在檔案末尾；不依模組名稱判斷，其來源仍正常檢查，也不重設其他 imports 的順序。
 - 依各上下文的 `cfg`／`cfg_attr` 與 test 模式檢查啟用範圍；未啟用的項目與其內部作用域不檢查、不修改、不列為 unresolved。
 - 使用固定 nightly 的 compiler 分析，會執行 build scripts／proc macros；啟用中的 imports 無法解析或編譯失敗時，不保證能產生規則診斷。
-- 不提供 rustdoc 程式碼區塊檢查，也不將巨集輸入或展開產生的 tokens 當成原文作用域解析；獨立 `include!` 片段同樣略過。
 
 ## Auto-fix
 
 - 以同一作用域中第一個至最後一個參與排序的項目為重排區段；所有 imports 分組都須明確，且區段內不得穿插其他定義、執行敘述、巨集或未參與排序的項目。
-- 區段內不得有註解或 attributes；緊鄰區段首尾項目的註解也會阻擋修正。作用域自身或外層僅在帶有未知 attributes 時阻擋修正；已知安全 builtin／tool attributes（例如 `feature`、`inline`、`rustfmt::skip`）不阻擋，`cfg_attr` 遞迴檢查所有分支。
+- 區段內不得有註解或 attributes；緊鄰區段首尾項目的註解也會阻擋修正。作用域自身或外層僅在帶有共用安全清單以外的 attributes 時阻擋修正。
 - 重排保留項目原文及各分區內的順序，以 LF 分隔項目，分區之間插入空白行。不推導縮排，同一行的宣告也可修正，排版交給 rustfmt。
 
-符合條件時，透過標準 Dylint 診斷提供 `MachineApplicable` 修正提案，由 `cargo dylint --fix` 套用；否則保留診斷，不修改來源。不進行跨平台或多環境修正仲裁。
-
-本規則只對負責的區段提供修正，不執行 rustfmt／Clippy；`--fix` 使用標準 Cargo fix 流程。使用順序為 Dylint → 既有 fmt/lint 流程。
+符合條件時提供 `MachineApplicable` suggestion，由 `cargo dylint --fix` 套用；否則只保留診斷。本規則不執行 rustfmt／Clippy，建議流程為 Dylint → 既有 fmt/lint。
 
 ### 完成進度
 
@@ -98,5 +94,5 @@ use std::sync::Arc;
 ## 實作邊界
 
 - 測試專用外部模組只排除明確要求 `test` 的 cfg：`test` 或含有此條件的 `all(...)`，支援巢狀 `all`；`any(...)`、`not(...)` 與 `feature = "test"` 不因此排除。
-- collectors 依 compiler facts 預先建立啟用節點範圍集合；inline modules 合併為逐檔一次分析，不重複回報。
-- 安全 attributes 清單由所有規則共用，見[架構](../architecture.md#安全邊界)。區段內帶 attributes 的 imports 或 module 宣告仍不搬移。
+- collector 依 compiler facts 預先建立啟用中的 CST 節點集合；inline modules 合併為逐檔一次分析，不重複回報。
+- 區段內帶 attributes 的 imports 或 module 宣告不搬移，即使 attribute 屬於共用安全清單。
