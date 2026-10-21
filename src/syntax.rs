@@ -65,6 +65,14 @@ fn inert_meta(meta: ast::Meta) -> bool {
         return true;
     }
 
+    // tokio: re-emits the function body as raw tokens inside an async block.
+    if meta
+        .path()
+        .is_some_and(|path| matches!(path.to_string().as_str(), "tokio::test" | "tokio::main"))
+    {
+        return true;
+    }
+
     meta.simple_name().is_some_and(|name| {
         matches!(
             name.as_str(),
