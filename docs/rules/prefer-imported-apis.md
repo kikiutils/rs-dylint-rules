@@ -110,6 +110,6 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 - [x] 驗證名稱衝突、固定 aliases、公開重新匯出、glob、巨集輸入排除及修正後行為。
 - [ ] 違規 aliases 的跨使用點重新命名與 glob 展開，目前僅診斷。
 
-已在 `nightly-2026-10-01` 與 anyhow `1.0.104` 驗證；未鎖定使用端的 anyhow 版本，若未來版本改變定義結構，須重新查核。
+已在 `nightly-2026-10-15` 與 anyhow `1.0.104` 驗證；未鎖定使用端的 anyhow 版本，若未來版本改變定義結構，須重新查核。
 
 API 來源辨識與 `Api` 定義位於規則的 `mod.rs`，collector 與名稱解析共用此入口。facts 依檔案保存並保留 module 歸屬，analysis 借用逐檔 facts 並在分析時去重。macro call 由呼叫起點的 CST 祖先定位，保留 call-site 包含分號的情況。
