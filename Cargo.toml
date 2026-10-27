@@ -163,9 +163,9 @@ full = ["all"]
 [dependencies]
 anyhow = "1.0.104"
 dylint_linting = "6.2.0"
-kikiutils = { version = "0.13.0", features = ["fx-collections"] }
-pathkit = "2.0.0"
-ra_ap_syntax = "0.0.359"
+kikiutils = { version = "0.13.2", features = ["fx-collections"] }
+pathkit = "3.0.0"
+ra_ap_syntax = "0.0.360"
 unicode-ident = "=1.0.24"
 
 # -----------------------------------------------------------------------------
