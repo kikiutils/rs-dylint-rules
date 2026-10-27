@@ -4,6 +4,7 @@ use rustc_span::def_id::{
     CRATE_DEF_INDEX,
     DefId,
 };
+use strum::IntoStaticStr;
 
 mod analysis;
 pub(super) mod collect;
@@ -11,25 +12,24 @@ mod resolution;
 
 rustc_lint_defs::declare_lint! { pub KIKI_PREFER_IMPORTED_APIS, Warn, "import selected APIs using their prescribed names" }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, IntoStaticStr)]
 enum Api {
+    #[strum(serialize = "anyhow")]
     Crate,
+    #[strum(serialize = "anyhow")]
     Anyhow,
+    #[strum(serialize = "bail")]
     Bail,
+    #[strum(serialize = "ensure")]
     Ensure,
     Result,
+    #[strum(serialize = "AnyhowError")]
     Error,
 }
 
 impl Api {
     fn name(self) -> &'static str {
-        match self {
-            Self::Crate | Self::Anyhow => "anyhow",
-            Self::Bail => "bail",
-            Self::Ensure => "ensure",
-            Self::Result => "Result",
-            Self::Error => "AnyhowError",
-        }
+        self.into()
     }
 
     fn allows(self, name: &str) -> bool {

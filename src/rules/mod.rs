@@ -2,6 +2,7 @@ use pathkit::Path;
 use rustc_hir as hir;
 use rustc_lint::LateContext;
 use rustc_lint_defs::Lint;
+use strum::VariantArray;
 
 mod grouped_derive_order;
 mod import_module_order;
@@ -18,15 +19,7 @@ use crate::{
 // Every rule, for lint registration and per-file analysis. The order only sets
 // diagnostic order and which overlapping fix applies first; `cargo fix` reruns
 // until stable, so it never changes the final result.
-pub(crate) const RULES: &[Rule] = &[
-    Rule::PreferImportedApis,
-    Rule::ImportPathPrefix,
-    Rule::ImportModuleOrder,
-    Rule::GroupedDeriveOrder,
-    Rule::StatementPadding,
-];
-
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, VariantArray)]
 pub(crate) enum Rule {
     PreferImportedApis,
     ImportPathPrefix,
@@ -125,5 +118,5 @@ impl Rule {
 }
 
 pub(crate) fn lints() -> rustc_lint_defs::LintVec {
-    RULES.iter().map(|rule| rule.lint()).collect()
+    Rule::VARIANTS.iter().map(|rule| rule.lint()).collect()
 }

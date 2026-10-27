@@ -166,6 +166,7 @@ dylint_linting = "6.2.0"
 kikiutils = { version = "0.13.2", features = ["fx-collections"] }
 pathkit = "3.0.0"
 ra_ap_syntax = "0.0.360"
+strum = { version = "0.28.0", features = ["derive"] }
 unicode-ident = "=1.0.24"
 
 # -----------------------------------------------------------------------------

@@ -4,11 +4,13 @@ use std::{
         BTreeMap,
         BTreeSet,
     },
+    env::current_dir,
     sync::Arc,
 };
 
 use pathkit::{
     Path,
+    SyncFsOps,
     path,
 };
 use ra_ap_syntax::TextRange;
@@ -92,14 +94,14 @@ impl Workspace {
         let file = Self::file(cx, span)?;
         let root = self
             .root
-            .get_or_init(|| path!(std::env::current_dir().ok()?).canonicalize().ok());
+            .get_or_init(|| path!(current_dir().ok()?).canonicalize_sync().ok());
 
         let path = self
             .paths
             .entry(file.start_pos)
             .or_insert_with(|| {
                 let FileName::Real(name) = &file.name else { return None };
-                let path = path!(name.local_path()?).canonicalize().ok()?;
+                let path = path!(name.local_path()?).canonicalize_sync().ok()?;
                 path.starts_with(root.as_ref()?).then_some(path)
             })
             .as_ref()?

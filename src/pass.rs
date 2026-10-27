@@ -8,12 +8,13 @@ use rustc_lint_defs::{
     LintVec,
 };
 use rustc_span::def_id::LocalModId;
+use strum::VariantArray;
 
 use crate::{
     rules::{
         self,
         Collectors,
-        RULES,
+        Rule,
     },
     source::Source,
     workspace::Workspace,
@@ -72,7 +73,7 @@ impl<'tcx> LateLintPass<'tcx> for KikiRules {
             };
 
             let can_fix = self.workspace.modules.can_fix(path);
-            for rule in RULES {
+            for rule in Rule::VARIANTS {
                 rule.analyze(&self.collectors, cx, path, &source, &self.workspace)
                     .emit(cx, *rule, &source, can_fix);
             }

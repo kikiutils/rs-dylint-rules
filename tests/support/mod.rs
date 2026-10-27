@@ -119,7 +119,7 @@ pub(crate) fn source(directory: &TempDir) -> Result<String> {
 }
 
 pub(crate) fn read(directory: &TempDir, relative: &str) -> Result<String> {
-    (path!(directory.path()) / relative).read_to_string_sync()
+    Ok((path!(directory.path()) / relative).read_to_string_sync()?)
 }
 
 pub(crate) fn write(directory: &TempDir, relative: &str, content: &str) -> Result<()> {
@@ -128,7 +128,8 @@ pub(crate) fn write(directory: &TempDir, relative: &str, content: &str) -> Resul
         parent.create_dir_all_sync()?;
     }
 
-    file.write_sync(content)
+    file.write_sync(content)?;
+    Ok(())
 }
 
 // Appends raw TOML sections to the fixture manifest.
