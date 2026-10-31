@@ -83,7 +83,8 @@ use std::sync::Arc;
 ## Auto-fix
 
 - 以同一作用域中第一個至最後一個參與排序的項目為重排區段；所有 imports 分組都須明確，且區段內不得穿插其他定義、執行敘述、巨集或未參與排序的項目。
-- 區段內不得有註解或 attributes；緊鄰區段首尾項目的註解也會阻擋修正。即使 attribute 屬於共用安全清單，也不搬移帶 attribute 的 imports 或 module 宣告；作用域自身或外層則僅在帶有安全清單以外的 attributes 時阻擋修正。
+- 允許 use tree 內部的普通註解隨整條 import 搬移，保留其原文與相對位置。
+- 區段內 use tree 以外的註解或 attributes 仍會阻擋修正，緊鄰區段首尾項目的註解亦同。即使 attribute 屬於共用安全清單，也不搬移帶 attribute 的 imports 或 module 宣告；作用域自身或外層則僅在帶有安全清單以外的 attributes 時阻擋修正。
 - 重排保留項目原文及各分區內的順序，以 LF 分隔項目，分區之間插入空白行。不推導縮排，同一行的宣告也可修正，排版交給 rustfmt。
 
 ## 驗證與安全性依據

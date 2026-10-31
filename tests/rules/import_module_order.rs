@@ -6,7 +6,7 @@ const CHILD: (&str, &str) = ("src/child.rs", "pub struct Value;\n");
 
 #[test]
 fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
-    let source = "use crate::child::Value;\nmod child;\nuse std::fmt;\n";
+    let source = "use crate::child::{/* local */ Value};\nmod child;\nuse std::{fmt, /* external */ io};\n";
     let directory = support::fixture_with(source, &[CHILD])?;
     let output = support::run(&directory, false, "kiki_import_module_order")?;
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
@@ -29,7 +29,7 @@ fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         support::source(&directory)?,
-        "use std::fmt;\n\nmod child;\n\nuse crate::child::Value;\n"
+        "use std::{fmt, /* external */ io};\n\nmod child;\n\nuse crate::child::{/* local */ Value};\n"
     );
 
     let output = support::run(&directory, false, "kiki_import_module_order")?;

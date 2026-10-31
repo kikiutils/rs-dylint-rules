@@ -39,6 +39,30 @@ fn orders_groups_without_changing_import_tokens() {
 }
 
 #[test]
+fn reorders_use_trees_with_comments_without_changing_their_text() {
+    for (source, expected) in [
+        (
+            "use crate::{/* local */ A};\nmod child;\nuse std::{fmt, /* external */ io};\n",
+            "use std::{fmt, /* external */ io};\n\nmod child;\n\nuse crate::{/* local */ A};\n",
+        ),
+        (
+            "use crate::{nested::{A as Alias, /* nested */ *}};\nuse std::{\n    // about fmt\n    fmt,\n};\n",
+            "use std::{\n    // about fmt\n    fmt,\n};\n\nuse crate::{nested::{A as Alias, /* nested */ *}};\n",
+        ),
+        (
+            "use crate /* local path */ ::A;\nuse std /* external path */ ::fmt;\n",
+            "use std /* external path */ ::fmt;\n\nuse crate /* local path */ ::A;\n",
+        ),
+    ] {
+        let output = check(source);
+        assert_eq!(output.issues.len(), 1, "{source}");
+        let fixed = apply(source, &output);
+        assert_eq!(fixed, expected);
+        assert_eq!(check(&fixed), RuleOutput::default());
+    }
+}
+
+#[test]
 fn known_enclosing_attributes_and_same_line_declarations_allow_edits() {
     for prefix in [
         "",
@@ -74,6 +98,13 @@ fn only_test_required_modules_are_excluded() {
 fn comments_unknown_attributes_and_intervening_items_block_edits() {
     for source in [
         "use crate::A;\n// attached\nuse std::io;\n",
+        "use crate::A; // trailing\nuse std::io;\n",
+        "// leading\nuse crate::A;\nuse std::io;\n",
+        "use crate::A;\nuse std::io; // edge\n",
+        "use crate::A;\n/// documented import\nuse std::io;\n",
+        "use crate::A;\nuse /* before tree */ std::io;\n",
+        "use crate::A;\nuse std::io /* after tree */;\n",
+        "use crate::A;\n#[allow(unused_imports)] use std::{/* inner */ io};\n",
         "use crate::A;\nfn unrelated() {}\nuse std::io;\n",
         "#![cfg_attr(any(), token_sensitive)]\nuse crate::A;\nuse std::io;\n",
         "#[token_sensitive] fn run() { use crate::A; use std::fmt; }\n",

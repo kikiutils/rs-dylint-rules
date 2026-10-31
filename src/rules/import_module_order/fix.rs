@@ -32,17 +32,17 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
         return None;
     }
 
-    // Attributes can run macros or affect module loading. Standalone comments
-    // have no reliable item ownership, so these cases remain diagnostic-only.
+    // Comments inside a use tree move with its unchanged text. Attributes and
+    // other comments remain barriers because their ownership may be unclear.
     if scope.descendants_with_tokens().any(|element| {
-        let relevant = range.intersect(element.text_range()).is_some();
-        relevant
-            && (matches!(
-                element.kind(),
-                SyntaxKind::ATTR | SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT
-            ) || element
-                .as_node()
-                .is_some_and(|node| ast::AnyAttr::can_cast(node.kind())))
+        if range.intersect(element.text_range()).is_none() {
+            return false;
+        }
+
+        match element.kind() {
+            SyntaxKind::COMMENT => !element.ancestors().any(|node| ast::UseTree::can_cast(node.kind())),
+            kind => ast::AnyAttr::can_cast(kind),
+        }
     }) {
         return None;
     }
