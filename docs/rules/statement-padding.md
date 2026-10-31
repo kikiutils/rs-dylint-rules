@@ -1,5 +1,7 @@
 # statement-padding
 
+狀態：**已實作**。lint：`kiki_statement_padding`。
+
 ## 目的
 
 跨多行的 statement 與相鄰的 item 若黏在一起，段落邊界不清楚。本規則只補上缺少的空行，讓跨多行的 statement 或 item 結束後，與下一個項目之間有明確分隔。
@@ -7,9 +9,9 @@
 ## 適用範圍
 
 - 檢查對象為同一作用域內 statement 與 item 之間的空行，包括檔案頂層、inline module、函式、closure、async block、控制流程與其他巢狀區塊中的 statement list，以及 `impl`、`trait`、`extern` 區塊內的成員列表。
-- 檢查 `mod` 宣告載入的自有 Rust 來源，包含 cfg 停用的程式碼。不依 cfg、target 或 feature 判斷是否啟用，插入空行不影響語意。
-- 只依 CST 的結構與原文換行判斷，不需要 rustc 的解析結果，因此不依名稱、型別或路徑判斷。
-- 巨集輸入、`macro_rules!` 內容、rustdoc 程式碼區塊與巨集展開產物不檢查；`include!` 引入的片段不是模組擁有的來源，也不檢查。
+- 遵守[共用分析範圍](../architecture.md#分析範圍)，包含已載入檔案內 cfg 停用的程式碼。
+- 只依 CST 的結構與原文換行判斷，不需要 rustc 的名稱／型別解析 facts；來源檔案的發現與模組歸屬仍依賴 rustc。
+- 不檢查 `macro_rules!` 內容；可檢查巨集定義或呼叫項目與下一個元素之間的空行，不解析其輸入 token tree。
 
 ## 規則
 
@@ -22,8 +24,7 @@
 
 ### 與其他規則的分工
 
-- `use`、`extern crate` 與沒有區塊的 `mod x;` 不在本規則範圍內，前後皆不要求空行，交由 rustfmt 處理。
-- 本規則只處理空行，不決定 item 的順序、分組或 import 路徑；這些分別由 `import-module-order`、`import-path-prefix` 等規則處理。
+本規則只處理空行，不決定 item 的順序、分組或 import 路徑；這些分別由 `import-module-order`、`import-path-prefix` 等規則處理。
 
 ## 正確範例
 
@@ -102,14 +103,24 @@ pub fn run(values: &[u8]) -> Option<u8> {
 
 `const A` 是單行常數，後方接著 `const B`，因此兩者之間不需要空行。改法即上方正確範例。
 
-## 例外
+## 政策例外
 
 - 單行 `const`、`static`、`type` 後方接著另一個 `const`、`static`、`type` 時，不要求空行，無論後者是否跨多行。多行項目之後仍要求空行。
 - `use`、`extern crate` 與 `mod x;` 不檢查，前後皆不要求空行。
-- 同一檔案被多個 module 共用（例如 `#[path]`）時，只回報、不修正。
+
+## 實作限制
+
+- 同一行相鄰的元素，例如 `fn a() {} fn b() {}`，僅診斷、不修正。拆行屬於排版決定，不由本規則自動決定。
 
 ## Auto-fix
 
-- 支援：多行 statement 或 item 後方缺空行，以及相鄰 item 之間缺空行，皆以 `MachineApplicable` suggestion 在前一元素結尾所在行之後插入一個換行。CRLF 檔案插入 CRLF。由 `cargo dylint --fix` 套用，規則本身不寫檔，也不呼叫 rustfmt。
+- 支援多行 statement 或 item 後方缺空行，以及不同行相鄰 item 之間缺空行，在前一元素結尾所在行之後插入一個換行。CRLF 檔案插入 CRLF。
 - 只插入換行，不改動其他 token，不刪除既有空行，不移動註解或 attribute。
-- 僅回報、不修正：同一行相鄰的元素，例如 `fn a() {} fn b() {}`。拆行屬於排版決定，不由本規則自動決定。
+
+## 驗證與安全性依據
+
+測試位置：純 CST 分析的單元測試見 [`src/rules/statement_padding/tests.rs`](../../src/rules/statement_padding/tests.rs)；Dylint 診斷與 auto-fix 的整合測試見 [`tests/rules/statement_padding.rs`](../../tests/rules/statement_padding.rs)。
+
+## 未決事項或後續規劃
+
+無

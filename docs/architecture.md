@@ -4,6 +4,8 @@
 
 `kiki-rs-dylint-rules` 是單一 Dylint 動態規則庫，產物為 `cdylib`，不提供獨立執行檔或 compiler driver。檢查與自動修正使用 `cargo dylint`／`cargo dylint --fix`。
 
+各規則的 lint 名稱、實作狀態與 auto-fix 支援程度見[規則索引](rules/README.md)。本文件集中說明已實作規則的共用機制；草案的設計與未決事項留在各規則文件。
+
 ## 模組分工
 
 | 模組 | 責任 |
@@ -32,9 +34,9 @@
 4. `grouped_derive_order`
 5. `statement_padding`
 
-順序只決定診斷的輸出先後，以及同一輪修正重疊時誰先套用；`cargo fix` 會重跑直到穩定，最終結果與順序無關。
+順序決定診斷的輸出先後，以及同一輪修正重疊時誰先套用；重疊的修正可能需要分多輪分析與套用。
 
-`Rule` 提供 lint、suggestion 說明及逐檔分析。HIR 收集由 `Collectors` 上與 lint pass 同名的 `check_*` 方法轉交給需要的 collector，與 `Rule::VARIANTS` 順序無關。診斷統一由 crate 層級輸出，不建立 item 或 module 的 lint level 歸屬機制。
+`Rule` 提供 lint、suggestion 說明及逐檔分析。HIR 收集由 `Collectors` 上與 lint pass 同名的 `check_*` 方法轉交給需要的 collector，與 `Rule::VARIANTS` 順序無關。
 
 ## 執行流程
 
@@ -58,18 +60,32 @@
 
 ## 分析範圍
 
-`statement_padding` 檢查模組來源整份 CST，包含 cfg 停用程式碼。其他四條規則僅根據啟用中的 compiler facts 分析。診斷不查找 item owner，也不針對 `allow` 建立額外處理；名稱解析所需的 HirId 仍保留。
+- 來源由當次 Cargo／rustc 在指定 target、features 與 cfg 下實際載入的模組決定，包含 crate root；不自行探索未載入的檔案或其他編譯設定。
+- 僅處理 canonicalize 後位於 compiler 工作目錄內、已登記為 module 原始定義檔的實體來源。不依固定目錄、`.rs` 副檔名或 Git 忽略規則篩選。
+- 獨立 `include!` item／expression 片段不屬於模組原始定義檔，因此略過。compiler facts 另須符合該檔案的 module 歸屬。
+- `statement_padding` 檢查已載入模組檔案的整份 CST，包含其中 cfg 停用的程式碼；不因此載入停用的外部模組檔案。其他四條規則僅根據啟用中的 compiler facts 分析，停用項目不列為 unresolved。
+- rustdoc 程式碼區塊、巨集輸入 token trees 與展開產物不直接當成原始程式碼分析；原始巨集呼叫與 derive 的處理方式見各規則文件。
+
+## 診斷層級
+
+診斷統一以 `CRATE_HIR_ID` 輸出，遵守 crate 層級與命令列的 lint 設定，不查找 item 或 module 的 lint level。因此局部 `allow`／`expect` 不會套用至這些診斷。名稱解析所需的 HirId 仍保留。
 
 ## 安全邊界
 
-- 僅分析登記為 module 原始來源的檔案，略過獨立 `include!` 片段。
 - 相同實體範圍被不同 module 載入時可提供診斷，但整份檔案不提供 fix。一般 inline module 的範圍不同，不會因此停用 fix。
-- `syntax::protected` 共用已知 builtin／tool attribute 安全清單（另含不讀取 derive 的 serde_with `skip_serializing_none`，以及原樣保留函式本體的 `tokio::test`／`tokio::main`）；`cfg_attr` 遞迴檢查所有分支，未知 attributes 保留屏障。derive helpers 另要求相同 item 有對應的已解析 derive。
+- import 與 derive 規則使用 `syntax::protected` 共用已知 builtin／tool attribute 安全清單（另含不讀取 derive 的 serde_with `skip_serializing_none`，以及原樣保留函式本體的 `tokio::test`／`tokio::main`）；`cfg_attr` 遞迴檢查所有分支，未知 attributes 保留屏障。derive helpers 另要求相同 item 有對應的已解析 derive。僅補空行的 `statement_padding` 不使用這項 attribute 判定。
 - 搬移或拆分 imports 仍須保留各規則的註解、cfg、名稱解析與 `expect` 保護。安全 attribute 不代表可以任意搬移帶 attributes 的 item。
-- fixes 只處理語法與語意，排版交給使用者的 rustfmt；規則不呼叫 rustfmt、Clippy 或直接寫檔。
+
+## 自動修正
+
+- 可安全套用的 edits 以 `MachineApplicable` multipart suggestions 提供，由 `cargo dylint --fix` 交給 Cargo fix 套用；規則不直接寫檔。
+- 無法確認安全的修正不提供 suggestion。未產生診斷或未提供修正，可能是支援範圍、安全條件或執行失敗所致，不代表程式碼符合規則或屬於政策例外。
+- 排版交給使用者的 rustfmt；規則不呼叫 rustfmt 或 Clippy。LF／CRLF、縮排及尾逗號的保留方式見各規則文件。建議流程為 Dylint → 既有 fmt/lint。
 
 ## 執行限制
 
 固定使用 `nightly-2026-10-15` 與 rustc private API。升級 nightly 需適配 API 並重新編譯。分析仍會執行目標專案的 build scripts 與 proc macros；目標專案須具備所選 target 的標準函式庫及原生依賴。workspace、target 與 features 由使用者指定，不自動窮舉其他環境。
+
+來源讀取、編譯或 CST 解析失敗時，不保證能產生各規則診斷。
 
 測試以獨立功能、診斷、安全屏障與 edit 結果為單位，不建立 lint fix 與 rustfmt 交替執行的驗收流程。

@@ -1,5 +1,7 @@
 # grouped-derive-order
 
+狀態：**已實作**。lint：`kiki_grouped_derive_order`。
+
 ## 目的
 
 以功能分組統一每個 `#[derive(...)]` 列表內的順序，讓 `Clone`／`Copy`、`PartialEq`／`Eq` 與 `PartialOrd`／`Ord` 保持相鄰，避免全部按字典排序拆散相關項目。此順序是本 repo 的風格政策，不是 Rust 官方標準。
@@ -7,10 +9,9 @@
 ## 適用範圍
 
 - 檢查對象為 struct、enum 與 union 定義上的原始 derive 列表；僅處理 rustc 確認為支援之內建或第三方 derive 的項目，不以名稱猜測巨集來源。
-- 檢查 Cargo／rustc 在當次 target、features 與 cfg 下實際載入、canonicalize 後位於 compiler 工作目錄內的實體來源，包含各層 module 與函式等區塊內的局部定義。
+- 遵守[共用分析範圍](../architecture.md#分析範圍)，包含各層 module 與函式等區塊內的局部定義。
 - 支援直接書寫的 `#[derive(...)]`、`#[core::derive(...)]` 與 `#[std::derive(...)]`，包含後兩者的絕對路徑寫法；列表內的限定路徑與支援之 derive aliases 依實際解析結果辨識。
 - 每個 derive attribute 獨立處理；不檢查其他 attributes 的整體排列，不跨列表要求全域順序。
-- 未啟用的項目、`cfg_attr` 內的 derive 列表、rustdoc 程式碼區塊、巨集輸入及展開產生的 derive 列表目前不處理。符合來源條件的 `include!` 實體來源不因使用 include 而排除，仍須能解析為 Rust item source file。
 
 ## 規則
 
@@ -30,7 +31,6 @@
 - 每個 `#[derive(...)]` 只整理自己的列表，不合併、拆分、交換 attributes，也不在列表之間搬動 derive。
 - 列表含有任何未知或未支援的 derive 時，整個列表略過，不提供排序診斷或修正，也不要求未知項目移至最後或按字典排序。
 - 某個列表被略過，不阻擋同一 item 上其他純已知列表獨立檢查。
-- 已查核版本：Serde `1.0.229`、is_empty `0.3.0`（is_empty_derive `0.1.0`）、serde_repr `0.1.21`、strum／strum_macros `0.28.0`。實作依巨集來源辨識，不限制使用端版本；其他版本若改變展開結構，須重新驗證。
 - `Serialize_repr`／`Deserialize_repr` 分別是一般 Serde derives 的替代方案，不應與實作相同 trait 的一般 derive 重複使用。Strum 僅支援表內四種 derives，其餘仍按未知列表處理。
 - 不新增、移除或去重 derive，不改寫限定路徑、aliases、型別內容、helper attributes 或其他 attributes。重複 derive 與缺少 trait 相依的錯誤仍由 rustc 或其他 lint 處理。
 
@@ -100,22 +100,26 @@ struct Value(u32);
 
 只需將第一個列表改為 `#[derive(PartialEq, Eq)]`，不改變兩個 attributes 的先後順序。
 
-## 例外
+## 政策例外
 
-- 無法確認所有項目均為支援之 derive 時，略過該列表，不猜測巨集來源，也不排序剩餘的已知子區段。
-- 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
-- 共用安全 attribute 清單（見[架構](../architecture.md#安全邊界)）不阻擋修正。定義自身的 `serde`、`is_empty`、`strum` helper attributes，須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。其他 attributes 與外層 helper 同名 attributes 仍只診斷、不修正，避免改變 attribute macro 的輸入。
-- 無法編譯或無法可靠對應原文與 compiler expansion 的程式碼，不保證能產生本規則的診斷。
+無
+
+## 實作限制
+
+- `cfg_attr` 內的 derive 列表目前不處理。
 
 ## Auto-fix
 
-- 只有所有項目皆確認為支援之 derive，且沒有上述修正障礙的列表，才提供 `MachineApplicable` suggestion。
+- 僅修正所有項目皆確認為支援之 derive，且沒有註解或 attribute 障礙的列表。
+- 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
+- 定義自身的 `serde`、`is_empty`、`strum` helper attributes，須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。不在共用安全清單內的其他 attributes，以及外層 helper 同名 attributes，仍只診斷、不修正，避免改變 attribute macro 的輸入。
 - 僅替換該 attribute 括號內的列表，保留各 derive 路徑與 alias 的原文及 attribute 外的內容；列表直接以 `", "` 串接，不保留原有尾隨逗號，換行、縮排與尾逗號交由 rustfmt 處理。
-- 不呼叫 rustfmt，不調整 attributes 的位置，不合併或拆分列表，也不對未列入支援清單的第三方／未知 derive 提供自動排序。
+- 不調整 attributes 的位置，不合併或拆分列表，也不對未列入支援清單的第三方／未知 derive 提供自動排序。
 - 列表邊界只在本規則內保留；本 repo 的 rustfmt 啟用 `merge_derives`，之後仍可能合併多個 attributes。
-- 由 `cargo dylint --fix` 套用修正。
 
-### 安全性依據
+## 驗證與安全性依據
+
+已查核版本：Serde `1.0.229`、is_empty `0.3.0`（is_empty_derive `0.1.0`）、serde_repr `0.1.21`、strum／strum_macros `0.28.0`。實作依巨集來源辨識，不限制使用端版本；其他版本若改變展開結構，須重新驗證。
 
 Rust 允許同一 item 有多個 derive attributes；[Reference](https://doc.rust-lang.org/reference/attributes/derive.html) 並未指定本文件的風格順序。[rustc #124794](https://github.com/rust-lang/rust/issues/124794) 展示的差異涉及分開書寫的 `Clone`／`Copy` attributes，不能推論成同一列表中兩者互換必然有相同問題；本規則不改變跨 attribute 的排列。
 
@@ -125,13 +129,6 @@ Serde `1.0.229` 的 [Serialize 產生器](https://docs.rs/crate/serde_derive/1.0
 
 is_empty_derive `0.1.0` 的 [產生器](https://docs.rs/crate/is_empty_derive/0.1.0/source/src/is_empty.rs) 依欄位產生 `IsEmpty` impl；serde_repr `0.1.21` 的 [產生器](https://docs.rs/crate/serde_repr/0.1.21/source/src/lib.rs) 依整數 repr 分別產生序列化與反序列化 impl。Strum `0.28.0` 本次支援的 [四種產生器](https://docs.rs/crate/strum_macros/0.28.0/source/src/macros/) 均直接為原 enum 產生 impl，不依 derive 列表順序決定內容；其他涉及轉換目標或額外型別的 derives 暫不納入。
 
-### 完成進度
+## 未決事項或後續規劃
 
-- [x] 純內建 derive 的功能分組與固定順序。
-- [x] 各 attribute 獨立處理、未知列表略過、alias 來源辨識與安全修正邊界。
-- [x] 加入 Serde `Serialize`／`Deserialize`，驗證來源、aliases、helper attribute 邊界及序列化往返。
-- [x] 加入 is_empty `IsEmpty`、serde_repr derives 及已知內建／helper attributes 的安全修正。
-- [x] 加入 Strum `EnumIs`、`EnumCount`、`VariantNames`、`VariantArray`。
-- [ ] 經查核後逐項擴充其餘第三方 derives。
-
-支援名稱、排序、來源 crate、helper 與 automatically-derived 要求統一保存在 `src/rules/grouped_derive_order/mod.rs` 的 `DERIVES` 表。compiler collector 與 analysis 共用這份資料。
+- 經查核後逐項擴充其餘第三方 derives，不把目前清單的驗證結果外推到未知巨集。

@@ -1,5 +1,7 @@
 # import-path-prefix
 
+狀態：**已實作**。lint：`kiki_import_path_prefix`。
+
 ## 目的
 
 統一自身 crate 內的 import 路徑前綴：目前模組與子模組使用 `self::`，非 root 祖先模組與其旁支使用 `super::`，必須回到 crate root 才能到達的目標使用 `crate::`。
@@ -7,9 +9,8 @@
 ## 適用範圍
 
 - 檢查對象為所有可見性的 imports（`use`、`pub use` 與各種 `pub(...) use`）中，自身 crate 的來源路徑。
-- 檢查 Cargo／rustc 在當次 target、features 與 cfg 下實際載入的自有 Rust 來源。
+- 遵守[共用分析範圍](../architecture.md#分析範圍)，只根據啟用中的 compiler facts 檢查。
 - 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置；路徑以 rustc 的實際解析結果為準。
-- 未啟用的程式碼、rustdoc 程式碼區塊與巨集展開產生的 imports 不檢查；不改寫巨集輸入。絕對路徑 `::...` 目前略過。
 
 ## 規則
 
@@ -149,28 +150,30 @@ use super::super::super::other::OtherType;
 
 應改成 `use crate::other::OtherType;`。
 
-## 例外
+## 政策例外
 
 - 函式或一般區塊內宣告、匯入的局部名稱，不一定屬於所屬 module 的命名空間；若加入 `self::` 等前綴會改變解析結果，不得套用模組前綴規則。
+
+## 實作限制
+
+- 絕對路徑 `::...` 目前略過。
 - 無前綴路徑只有在 rustc 確認其為自身 crate 的項目，且目前 module 存在相同名稱、相同解析結果的 binding 時才檢查；該 import 自身產生的 binding 不算數，因此 `pub(crate) use my_macro;` 這類 `macro_rules!` re-export 不檢查。無法確認的局部 binding 不猜測。
-- 無法可靠解析路徑的情況屬於實作限制，不代表允許使用不符合規則的前綴。
 
 ## Auto-fix
 
-由 `cargo dylint --fix` 套用 `MachineApplicable` suggestions，不自行寫檔或呼叫 rustfmt。
-
 - 只在能確認 module 層級與路徑解析結果不變時，替換路徑前綴。
 - 保留 aliases、可見性、attributes 與註解，不改變匯入目標。
-- 支援一般 imports、aliases、glob 與群組內可獨立替換的前綴。共用前綴的各分支若要求不同修正，或替換必須跨越群組大括號，將無註解的 use tree 拆成獨立 imports，依 rustc 已確認的各分支解析結果同步修正前綴；保留可見性、aliases、glob 與安全 attributes。含註解或自身帶有 `expect`（包含巢狀 `cfg_attr`）的分組不拆分，避免改變註解歸屬或複製 lint expectations。
+- 支援一般 imports、aliases、glob 與群組內可獨立替換的前綴。共用前綴的各分支若要求不同修正，或替換必須跨越群組大括號，將無註解的 use tree 拆成獨立 imports，依 rustc 已確認的各分支解析結果同步修正前綴；保留可見性、aliases、glob 與安全 attributes。含註解或自身帶有 `expect`（包含巢狀 `cfg_attr`）的分組不拆分，避免改變註解歸屬或複製 lint expectations。拆分 imports 一律以 LF 分隔，不推導縮排或自行合併，排版交給 rustfmt。
 - 單獨匯入前綴所指的 module 本身時，若修正需要改寫成 `self::{self as Alias}` 或 `super::{self as Alias}` 等群組形式，目前僅診斷。
 - 替換區段含有註解，或 import／同份原文的外層作用域帶有共用安全清單以外的 attributes 時，僅診斷，避免改變註解或 attribute macro 的輸入。
 - 不靠檔案目錄深度猜測 `super::` 數量；以 rustc 提供的 module 結構為準，`#[path]` 本身不阻擋修正。巨集或其他情況若無法確認 module 結構與解析結果，不自動修正。
 
-### 完成進度
+## 驗證與安全性依據
 
-- [x] 以 rustc 的 module 結構、路徑分段解析與 binding 判定前綴，保留 re-export 路徑。
-- [x] 支援所有可見性、巢狀區塊、aliases、glob 與可安全替換的群組 imports。
-- [x] 提供修正結果、未啟用項目、巨集排除與 `#[path]` 的測試案例。
-- [x] 無註解分組的拆分修正與安全 `cfg_attr` 遞迴判斷。
+測試位置：單元測試見 [`src/rules/import_path_prefix/tests.rs`](../../src/rules/import_path_prefix/tests.rs)，整合測試見 [`tests/rules/import_path_prefix.rs`](../../tests/rules/import_path_prefix.rs)。
 
-來源 use 由涵蓋範圍的 CST 祖先定位，不對每個 import 掃描全樹。診斷與修正轉成共用 `RuleOutput`，由單一 pass 統一 emit。拆分 imports 一律以 LF 分隔，不推導縮排或自行合併，排版交給 rustfmt。
+工具鏈固定為 [`nightly-2026-10-15`](../../rust-toolchain.toml)。
+
+## 未決事項或後續規劃
+
+無
