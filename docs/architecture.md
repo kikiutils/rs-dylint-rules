@@ -8,7 +8,7 @@
 
 | 模組 | 責任 |
 |---|---|
-| `src/lib.rs` | 從 `rules::RULES` 註冊五個 lint，並註冊唯一的 `KikiRules` late pass。 |
+| `src/lib.rs` | 從 `rules::Rule::VARIANTS` 註冊五個 lint，並註冊唯一的 `KikiRules` late pass。 |
 | `src/pass.rs` | 收集模組來源，將 HIR 事件分派給 collectors，於 crate 結束時逐檔分析與 emit。 |
 | `src/workspace.rs` | `Workspace`：快取來源路徑，記錄 crate 載入的檔案與模組來源（含共用檔案判定）。 |
 | `src/source.rs` | 讀取並解析單一來源檔，處理 BOM／CRLF 位移與 span 換算。 |
@@ -23,7 +23,7 @@
 
 ## 規則註冊與順序
 
-`src/rules/mod.rs` 的 `RULES` 是 lint 註冊及逐檔分析、emit 順序的唯一來源：
+`src/rules/mod.rs` 的 `Rule::VARIANTS` 是 lint 註冊及逐檔分析、emit 順序的唯一來源：
 
 1. `prefer_imported_apis`
 2. `import_path_prefix`
@@ -33,7 +33,7 @@
 
 順序只決定診斷的輸出先後，以及同一輪修正重疊時誰先套用；`cargo fix` 會重跑直到穩定，最終結果與順序無關。
 
-`Rule` 提供 lint、suggestion 說明及逐檔分析。HIR 收集由 `Collectors` 上與 lint pass 同名的 `check_*` 方法轉交給需要的 collector，與 `RULES` 順序無關。診斷統一由 crate 層級輸出，不建立 item 或 module 的 lint level 歸屬機制。
+`Rule` 提供 lint、suggestion 說明及逐檔分析。HIR 收集由 `Collectors` 上與 lint pass 同名的 `check_*` 方法轉交給需要的 collector，與 `Rule::VARIANTS` 順序無關。診斷統一由 crate 層級輸出，不建立 item 或 module 的 lint level 歸屬機制。
 
 ## 執行流程
 
@@ -43,7 +43,7 @@
 2. `check_mod` 記錄模組來源。item、path、expression、generic parameter 與 foreign item 的 HIR 事件交給 `Collectors` 的對應 `check_*` 方法，供各 collector 收集語意。
 3. 來源路徑以 rustc `SourceFile` 的起始位置為 key 快取，包含無法使用的結果。工作目錄只 canonicalize 一次，僅納入位於該目錄內的實體來源。
 4. facts 依實體路徑分檔，每筆保留 module 編號與 HirId。分析前逐筆檢查來源是否屬於該模組。
-5. `check_crate_post` 逐檔以 `Source::load` 讀取並解析，每個路徑只處理一次，再按 `RULES` 順序執行各規則的 analysis 與 emit。
+5. `check_crate_post` 逐檔以 `Source::load` 讀取並解析，每個路徑只處理一次，再按 `Rule::VARIANTS` 順序執行各規則的 analysis 與 emit。
 6. `RuleOutput` 統一由 crate 層級產生標準 rustc lint 與 `MachineApplicable` multipart suggestions。指定 `--fix` 時，由 Cargo fix 套用。
 
 同一次編譯中的各規則均分析 rustc 載入的原文；規則不自行套用 edits 或將中間修正結果交給下一條規則。

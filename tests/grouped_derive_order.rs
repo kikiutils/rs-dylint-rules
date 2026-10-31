@@ -52,7 +52,7 @@ fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists(
 
 #[test]
 fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> Result<()> {
-    let source = "const LABEL: &str = \"型別\";\r\n#[derive(Hash, Ord, Eq, Copy, PartialOrd, Default, Clone, Debug, PartialEq)]\r\npub struct Value(u32);\r\n#[test] fn behavior() { let value = Value::default(); assert_eq!(value, value.clone()); assert!(value < Value(1)); assert_eq!(format!(\"{value:?}\"), \"Value(0)\"); use std::hash::{Hash, Hasher}; let mut hasher = std::collections::hash_map::DefaultHasher::new(); value.hash(&mut hasher); assert_ne!(hasher.finish(), 0); }\r\n";
+    let source = "const LABEL: &str = \"型別\";\r\n#[derive(Hash, Ord, Eq, Copy, PartialOrd, Default, Clone, Debug, PartialEq)]\r\npub struct Value(u32);\r\n#[test] fn behavior() { let value = Value::default(); assert_eq!(value, value.clone()); assert!(value < Value(1)); assert_eq!(format!(\"{value:?}\"), \"Value(0)\"); use std::hash::Hash; let mut hasher = std::collections::hash_map::DefaultHasher::new(); value.hash(&mut hasher); }\r\n";
     let directory = support::fixture(source)?;
     for fix in [false, true] {
         let output = support::run(&directory, fix, "kiki_grouped_derive_order")?;

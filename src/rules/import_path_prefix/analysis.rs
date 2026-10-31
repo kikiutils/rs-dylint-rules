@@ -39,6 +39,11 @@ pub(super) fn analyze(root: &SyntaxNode, source: &str, imports: &[&Import]) -> R
     let mut output = RuleOutput::default();
     let mut emitted = Vec::new();
     let mut split_ranges = Vec::new();
+    let plans: Vec<_> = imports
+        .iter()
+        .map(|import| (import.segments.as_slice(), &import.plan))
+        .collect();
+
     for import in imports {
         // Macro inputs are token trees, not source use items. Expansion
         // tokens can retain original spans even without expansion ctxt.
@@ -58,11 +63,6 @@ pub(super) fn analyze(root: &SyntaxNode, source: &str, imports: &[&Import]) -> R
         });
 
         let edit = edit.or_else(|| {
-            let plans: Vec<_> = imports
-                .iter()
-                .map(|other| (other.segments.as_slice(), &other.plan))
-                .collect();
-
             let split = split_import(root, source, &import.segments, &plans)?;
             if split_ranges.contains(&split.range) {
                 return None;
