@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-mod support;
+use crate::support;
 
 const CHILD: (&str, &str) = ("src/child.rs", "pub struct Value;\n");
 

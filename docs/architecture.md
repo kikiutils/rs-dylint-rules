@@ -19,7 +19,8 @@
 | `src/rules/*/analysis.rs` | 依 CST、原文與 compiler facts 產生診斷及安全 edits。 |
 | `src/rules/prefer_imported_apis/resolution.rs` | 使用 rustc 的 binding、reference、namespace 與 glob 資訊判斷名稱安全性。 |
 | `src/test_support.rs` | analysis 單元測試套用 edits 的 helper。 |
-| `tests/support/mod.rs` | 整合測試共用 fixture、Cargo 執行及 JSON 診斷判讀。 |
+| `tests/rules/main.rs` | 規則專屬整合測試入口，各規則案例位於同目錄；跨規則與來源情境測試保留於 `tests/`。 |
+| `tests/support/mod.rs` | 整合測試共用 fixture、Cargo 執行及 JSON 診斷判讀；放在子目錄避免被 Cargo 當成獨立測試 target。 |
 
 ## 規則註冊與順序
 

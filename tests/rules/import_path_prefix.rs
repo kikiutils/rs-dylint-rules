@@ -4,7 +4,7 @@ use pathkit::{
     path,
 };
 
-mod support;
+use crate::support;
 
 #[test]
 fn fixes_resolved_routes_without_shortcutting_reexports() -> Result<()> {

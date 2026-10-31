@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-mod support;
+use crate::support;
 
 #[test]
 fn fixes_builtin_lists_independently_and_resolves_aliases() -> Result<()> {

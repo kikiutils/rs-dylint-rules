@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-mod support;
+use crate::support;
 
 #[test]
 fn fixes_statements_items_and_cfg_disabled_code_and_is_idempotent() -> Result<()> {

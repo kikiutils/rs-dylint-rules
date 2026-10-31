@@ -1,7 +1,7 @@
 use anyhow::Result;
 use tempfile::TempDir;
 
-mod support;
+use crate::support;
 
 fn fixture(source: &str) -> Result<TempDir> {
     let directory = support::fixture(source)?;
