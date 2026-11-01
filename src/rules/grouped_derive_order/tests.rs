@@ -11,33 +11,17 @@ use crate::{
     },
 };
 
-const COLLIDING_DERIVES: &[Derive] = &[
-    Derive {
-        name: "Debug",
-        key: (0, 0),
-        krate: None,
-        helper: None,
-    },
-    Derive {
-        name: "Debug",
-        key: (0, 0),
-        krate: Some("first"),
-        helper: Some("first"),
-    },
-    Derive {
-        name: "Debug",
-        key: (0, 0),
-        krate: Some("second"),
-        helper: Some("second"),
-    },
-];
+fn resolved_derive(path: &str) -> Option<&'static Derive> {
+    if let Some((prefix, name)) = path.split_once("::") {
+        let krate = match prefix {
+            "derive_more" => "derive_more_impl",
+            "strum" => "strum_macros",
+            _ => return None,
+        };
 
-fn resolved_derive(name: &str) -> Option<&'static Derive> {
-    match name {
-        "Debug" => Some(&COLLIDING_DERIVES[0]),
-        "first::Debug" => Some(&COLLIDING_DERIVES[1]),
-        "second::Debug" => Some(&COLLIDING_DERIVES[2]),
-        _ => DERIVES.iter().find(|derive| derive.name == name),
+        DERIVES.iter().find(|derive| derive.matches(name, krate, false))
+    } else {
+        DERIVES.iter().find(|derive| derive.name == path)
     }
 }
 
@@ -186,38 +170,38 @@ fn helpers_require_a_matching_derive_on_the_same_item() {
 }
 
 #[test]
-fn same_named_builtin_derives_do_not_authorize_third_party_helpers() {
-    for (path, krate, helper, can_fix) in [
-        ("Debug", "core", "debug", false),
-        ("Debug", "derive_more_impl", "debug", true),
-        ("Eq", "core", "eq", false),
-        ("Eq", "derive_more_impl", "eq", true),
-        ("PartialEq", "core", "partial_eq", false),
-        ("PartialEq", "derive_more_impl", "partial_eq", true),
-        ("Display", "strum_macros", "display", false),
-        ("Display", "derive_more_impl", "display", true),
-        ("Display", "strum_macros", "strum", true),
-        ("Display", "derive_more_impl", "strum", false),
+fn helpers_require_the_resolved_identity_not_a_shared_name_or_sort_key() {
+    for (path, helper, ordered) in [
+        ("Debug", "debug", None),
+        ("derive_more::Debug", "debug", Some("derive_more::Debug, Clone, Hash")),
+        ("Eq", "eq", None),
+        ("derive_more::Eq", "eq", Some("Clone, derive_more::Eq, Hash")),
+        ("PartialEq", "partial_eq", None),
+        (
+            "derive_more::PartialEq",
+            "partial_eq",
+            Some("Clone, derive_more::PartialEq, Hash"),
+        ),
+        ("strum::Display", "display", None),
+        (
+            "derive_more::Display",
+            "display",
+            Some("derive_more::Display, Clone, Hash"),
+        ),
+        ("strum::Display", "strum", Some("strum::Display, Clone, Hash")),
+        ("derive_more::Display", "strum", None),
     ] {
         for attribute in [
             format!("{helper}(unused)"),
             format!("cfg_attr(all(), {helper}(unused))"),
         ] {
-            let source = format!("#[{attribute}] #[derive(Hash, {path}, Clone)] struct Value;");
+            let derives = format!("Hash, {path}, Clone");
+            let source = format!("#[{attribute}] #[derive({derives})] struct Value;");
             let root = parse(&source);
-            let output = analysis::analyze(&root, &source, |range| {
-                let name = &source[range];
-                if name == path {
-                    DERIVES
-                        .iter()
-                        .find(|derive| derive.matches(name, krate, krate == "core"))
-                } else {
-                    DERIVES.iter().find(|derive| derive.matches(name, "core", true))
-                }
-            });
-
+            let output = analysis::analyze(&root, &source, |range| resolved_derive(&source[range]));
             assert_eq!(output.issues.len(), 1, "{source}");
-            assert_eq!(output.issues[0].fix.is_some(), can_fix, "{source}");
+            let expected = ordered.map_or_else(|| source.clone(), |ordered| source.replace(&derives, ordered));
+            assert_eq!(apply(&source, &output), expected, "{source}");
         }
     }
 }
@@ -225,56 +209,48 @@ fn same_named_builtin_derives_do_not_authorize_third_party_helpers() {
 #[test]
 fn matching_checks_name_and_source_before_selecting_an_entry() {
     for (name, krate, builtin, expected) in [
-        ("Debug", "core", true, Some(0)),
-        ("Debug", "first", false, Some(1)),
-        ("Debug", "second", false, Some(2)),
-        ("Debug", "unknown", false, None),
+        ("Debug", "core", true, Some(("Debug", None))),
+        (
+            "Debug",
+            "derive_more_impl",
+            false,
+            Some(("Debug", Some("derive_more_impl"))),
+        ),
+        (
+            "Display",
+            "derive_more_impl",
+            false,
+            Some(("Display", Some("derive_more_impl"))),
+        ),
+        (
+            "Display",
+            "strum_macros",
+            false,
+            Some(("Display", Some("strum_macros"))),
+        ),
+        ("Debug", "strum_macros", false, None),
         ("Debug", "core", false, None),
-        ("Other", "first", false, None),
+        ("Other", "derive_more_impl", false, None),
     ] {
-        let found = COLLIDING_DERIVES
+        let found = DERIVES
             .iter()
-            .find(|derive| derive.matches(name, krate, builtin));
+            .find(|derive| derive.matches(name, krate, builtin))
+            .map(|derive| (derive.name, derive.krate));
 
-        assert_eq!(found, expected.map(|index| &COLLIDING_DERIVES[index]));
-    }
-}
-
-#[test]
-fn helpers_require_the_resolved_identity_not_a_shared_sort_key() {
-    for (path, helper, can_fix) in [
-        ("Debug", "first", false),
-        ("first::Debug", "first", true),
-        ("second::Debug", "first", false),
-        ("second::Debug", "second", true),
-        ("first::Debug", "second", false),
-    ] {
-        let source = format!("#[{helper}(unused)] #[derive(Eq, {path}, PartialEq)] struct Value;");
-        let root = parse(&source);
-        let output = analysis::analyze(&root, &source, |range| resolved_derive(&source[range]));
-        assert_eq!(output.issues.len(), 1, "{source}");
-        assert_eq!(output.issues[0].fix.is_some(), can_fix, "{source}");
-        let expected = if can_fix {
-            source.replace(&format!("Eq, {path}, PartialEq"), &format!("{path}, PartialEq, Eq"))
-        } else {
-            source.clone()
-        };
-
-        assert_eq!(apply(&source, &output), expected);
+        assert_eq!(found, expected, "{name} from {krate}, builtin={builtin}");
     }
 }
 
 #[test]
 fn shared_sort_keys_preserve_order_and_do_not_repeat_names_in_messages() {
-    let source = "#[derive(Eq, second::Debug, first::Debug, PartialEq)] struct Value;";
+    let source = "#[derive(Eq, strum::Display, derive_more::Display, PartialEq)] struct Value;";
     let root = parse(source);
     let output = analysis::analyze(&root, source, |range| resolved_derive(&source[range]));
     assert_eq!(
         apply(source, &output),
-        "#[derive(second::Debug, first::Debug, PartialEq, Eq)] struct Value;"
+        "#[derive(strum::Display, derive_more::Display, PartialEq, Eq)] struct Value;"
     );
 
-    assert_eq!(analysis::groups_message(COLLIDING_DERIVES), "Debug");
     assert_eq!(
         analysis::groups_message(DERIVES),
         "Debug, Display, Error; Clone, Copy; Default, Constructor; PartialEq, Eq, PartialOrd, Ord, Hash; Serialize, Serialize_repr, Deserialize, Deserialize_repr; IsEmpty, IsVariant, EnumIs; EnumCount, VariantNames, VariantArray, EnumProperty, EnumMessage; From, TryFrom, FromStr, EnumString, FromRepr; AsRef, AsRefStr, AsMut, Deref, DerefMut, Index, IndexMut; Unwrap, TryUnwrap, EnumTryAs; IntoIterator, EnumIter"

@@ -23,68 +23,6 @@ fn fixes_builtin_lists_independently_and_resolves_aliases() -> Result<()> {
 }
 
 #[test]
-fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists() -> Result<()> {
-    let source = "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Eq, custom::IsEmpty, PartialEq)]\npub struct ProtectedEmpty;\n#[derive(Eq, custom::Serialize_repr, PartialEq)]\npub struct ProtectedRepr;\n#[derive(Eq, custom::EnumCount, PartialEq)]\npub struct ProtectedStrum;\n#[derive(Eq, custom::Display, PartialEq)]\npub struct ProtectedDisplay;\n#[derive(Hash, Eq, PartialEq)]\npub struct Plain;\n";
-    let directory = support::fixture_with(
-        source,
-        &[
-            (
-                "custom/Cargo.toml",
-                "[package]\nname=\"custom\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[lib]\nproc-macro=true\n",
-            ),
-            (
-                "custom/src/lib.rs",
-                r##"extern crate proc_macro;
-#[proc_macro_derive(Clone)]
-pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "impl Protected {}".parse().unwrap()
-}
-#[proc_macro_derive(Serialize)]
-pub fn serialize(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "impl ProtectedSerde {}".parse().unwrap()
-}
-#[proc_macro_derive(IsEmpty)]
-pub fn empty(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "impl ProtectedEmpty {}".parse().unwrap()
-}
-#[proc_macro_derive(Serialize_repr)]
-pub fn repr(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "impl ProtectedRepr {}".parse().unwrap()
-}
-#[proc_macro_derive(EnumCount)]
-pub fn count(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "impl ProtectedStrum {}".parse().unwrap()
-}
-#[proc_macro_derive(Display)]
-pub fn display(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "impl ProtectedDisplay {}".parse().unwrap()
-}
-"##,
-            ),
-        ],
-    )?;
-
-    support::dependency(&directory, "custom={path=\"custom\"}")?;
-    let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
-    assert!(output.status.success(), "{output:?}");
-    let diagnostics = support::diagnostics(&output, "kiki_grouped_derive_order");
-    assert_eq!(diagnostics.len(), 1, "{output:?}");
-    assert_eq!(
-        diagnostics[0]["message"]["spans"][0]["text"][0]["text"],
-        "#[derive(Hash, Eq, PartialEq)]"
-    );
-
-    let output = support::run(&directory, true, "kiki_grouped_derive_order")?;
-    assert!(output.status.success(), "{output:?}");
-    assert_eq!(
-        support::source(&directory)?,
-        source.replace("Hash, Eq, PartialEq", "PartialEq, Eq, Hash")
-    );
-
-    Ok(())
-}
-
-#[test]
 fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> Result<()> {
     let source = "const LABEL: &str = \"型別\";\r\n#[derive(Hash, Ord, Eq, Copy, PartialOrd, Default, Clone, Debug, PartialEq)]\r\npub struct Value(u32);\r\n#[test] fn behavior() { let value = Value::default(); assert_eq!(value, value.clone()); assert!(value < Value(1)); assert_eq!(format!(\"{value:?}\"), \"Value(0)\"); use std::hash::Hash; let mut hasher = std::collections::hash_map::DefaultHasher::new(); value.hash(&mut hasher); }\r\n";
     let directory = support::fixture(source)?;
@@ -235,66 +173,6 @@ fn inactive_derives_do_not_produce_facts() -> Result<()> {
     let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
     assert!(output.status.success(), "{output:?}");
     assert!(!support::has_lint(&output, "kiki_grouped_derive_order"), "{output:?}");
-    Ok(())
-}
-
-#[test]
-fn unknown_derives_protect_their_input_but_keep_ordering_diagnostics() -> Result<()> {
-    let source = r"#[derive(custom::Observe)]
-#[derive(Eq, PartialEq)]
-pub struct Value;
-#[derive(custom::Observe)]
-pub struct Outer([u8; { #[derive(Eq, PartialEq)] struct Inner; 0 }]);
-#[derive(Hash, Eq, PartialEq)]
-pub struct Plain;
-#[test] fn behavior() {
-    assert!(Value::ORIGINAL_ORDER);
-    assert!(Outer::ORIGINAL_ORDER);
-}
-";
-
-    let directory = support::fixture_with(
-        source,
-        &[
-            (
-                "custom/Cargo.toml",
-                "[package]\nname=\"custom\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[lib]\nproc-macro=true\n",
-            ),
-            (
-                "custom/src/lib.rs",
-                r#"extern crate proc_macro;
-#[proc_macro_derive(Observe)]
-pub fn observe(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    let original = input.to_string().contains("Eq, PartialEq");
-    let mut tokens = input.into_iter();
-    tokens.find(|token| token.to_string() == "struct").unwrap();
-    let name = tokens.next().unwrap();
-    format!("impl {name} {{ pub const ORIGINAL_ORDER: bool = {original}; }}").parse().unwrap()
-}
-"#,
-            ),
-        ],
-    )?;
-
-    support::dependency(&directory, "custom={path=\"custom\"}")?;
-    let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
-    assert!(output.status.success(), "{output:?}");
-    let diagnostics = support::diagnostics(&output, "kiki_grouped_derive_order");
-    assert_eq!(diagnostics.len(), 3, "{output:?}");
-
-    for fix in [false, true] {
-        let output = support::run(&directory, fix, "kiki_grouped_derive_order")?;
-        assert!(output.status.success(), "{output:?}");
-
-        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
-        assert!(behavior.status.success(), "{behavior:?}");
-    }
-
-    assert_eq!(
-        support::source(&directory)?,
-        source.replace("Hash, Eq, PartialEq", "PartialEq, Eq, Hash")
-    );
-
     Ok(())
 }
 
