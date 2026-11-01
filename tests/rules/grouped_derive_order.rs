@@ -37,27 +37,27 @@ fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists(
                 r##"extern crate proc_macro;
 #[proc_macro_derive(Clone)]
 pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "#[automatically_derived] impl Protected {}".parse().unwrap()
+    "impl Protected {}".parse().unwrap()
 }
 #[proc_macro_derive(Serialize)]
 pub fn serialize(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "#[automatically_derived] impl ProtectedSerde {}".parse().unwrap()
+    "impl ProtectedSerde {}".parse().unwrap()
 }
 #[proc_macro_derive(IsEmpty)]
 pub fn empty(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "#[automatically_derived] impl ProtectedEmpty {}".parse().unwrap()
+    "impl ProtectedEmpty {}".parse().unwrap()
 }
 #[proc_macro_derive(Serialize_repr)]
 pub fn repr(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "#[automatically_derived] impl ProtectedRepr {}".parse().unwrap()
+    "impl ProtectedRepr {}".parse().unwrap()
 }
 #[proc_macro_derive(EnumCount)]
 pub fn count(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "#[automatically_derived] impl ProtectedStrum {}".parse().unwrap()
+    "impl ProtectedStrum {}".parse().unwrap()
 }
 #[proc_macro_derive(Display)]
 pub fn display(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
-    "#[automatically_derived] impl ProtectedDisplay {}".parse().unwrap()
+    "impl ProtectedDisplay {}".parse().unwrap()
 }
 "##,
             ),

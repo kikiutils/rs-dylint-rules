@@ -17,21 +17,18 @@ const COLLIDING_DERIVES: &[Derive] = &[
         key: (0, 0),
         krate: None,
         helper: None,
-        check_automatically_derived: false,
     },
     Derive {
         name: "Debug",
         key: (0, 0),
         krate: Some("first"),
         helper: Some("first"),
-        check_automatically_derived: true,
     },
     Derive {
         name: "Debug",
         key: (0, 0),
         krate: Some("second"),
         helper: Some("second"),
-        check_automatically_derived: false,
     },
 ];
 
@@ -213,9 +210,9 @@ fn same_named_builtin_derives_do_not_authorize_third_party_helpers() {
                 if name == path {
                     DERIVES
                         .iter()
-                        .find(|derive| derive.matches(name, krate, krate == "core", true))
+                        .find(|derive| derive.matches(name, krate, krate == "core"))
                 } else {
-                    DERIVES.iter().find(|derive| derive.matches(name, "core", true, true))
+                    DERIVES.iter().find(|derive| derive.matches(name, "core", true))
                 }
             });
 
@@ -227,18 +224,17 @@ fn same_named_builtin_derives_do_not_authorize_third_party_helpers() {
 
 #[test]
 fn matching_checks_name_and_source_before_selecting_an_entry() {
-    for (name, krate, builtin, automatically_derived, expected) in [
-        ("Debug", "core", true, true, Some(0)),
-        ("Debug", "first", false, true, Some(1)),
-        ("Debug", "second", false, false, Some(2)),
-        ("Debug", "first", false, false, None),
-        ("Debug", "unknown", false, true, None),
-        ("Debug", "core", false, true, None),
-        ("Other", "first", false, true, None),
+    for (name, krate, builtin, expected) in [
+        ("Debug", "core", true, Some(0)),
+        ("Debug", "first", false, Some(1)),
+        ("Debug", "second", false, Some(2)),
+        ("Debug", "unknown", false, None),
+        ("Debug", "core", false, None),
+        ("Other", "first", false, None),
     ] {
         let found = COLLIDING_DERIVES
             .iter()
-            .find(|derive| derive.matches(name, krate, builtin, automatically_derived));
+            .find(|derive| derive.matches(name, krate, builtin));
 
         assert_eq!(found, expected.map(|index| &COLLIDING_DERIVES[index]));
     }

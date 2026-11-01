@@ -44,10 +44,9 @@ impl Collector {
         let name = cx.tcx.item_name(definition);
         let krate = cx.tcx.crate_name(definition.krate);
         let builtin = cx.tcx.is_builtin_derived(item.owner_id.to_def_id());
-        let automatically_derived = cx.tcx.is_automatically_derived(item.owner_id.to_def_id());
         let Some(derive) = super::DERIVES
             .iter()
-            .find(|derive| derive.matches(name.as_str(), krate.as_str(), builtin, automatically_derived))
+            .find(|derive| derive.matches(name.as_str(), krate.as_str(), builtin))
         else {
             return;
         };
