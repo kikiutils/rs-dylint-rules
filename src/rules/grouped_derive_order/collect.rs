@@ -10,7 +10,10 @@ use rustc_span::hygiene::{
     MacroKind,
 };
 
-use super::analysis;
+use super::{
+    Derive,
+    analysis,
+};
 use crate::{
     diagnostic::RuleOutput,
     facts::Facts,
@@ -20,7 +23,7 @@ use crate::{
 
 #[derive(Default)]
 pub(crate) struct Collector {
-    facts: Facts<analysis::SortKey>,
+    facts: Facts<&'static Derive>,
 }
 
 impl Collector {
@@ -39,22 +42,15 @@ impl Collector {
         };
 
         let name = cx.tcx.item_name(definition);
-        let Some(derive) = super::DERIVES.iter().find(|derive| derive.name == name.as_str()) else {
+        let krate = cx.tcx.crate_name(definition.krate);
+        let builtin = cx.tcx.is_builtin_derived(item.owner_id.to_def_id());
+        let automatically_derived = cx.tcx.is_automatically_derived(item.owner_id.to_def_id());
+        let Some(derive) = super::DERIVES
+            .iter()
+            .find(|derive| derive.matches(name.as_str(), krate.as_str(), builtin, automatically_derived))
+        else {
             return;
         };
-
-        let supported = match derive.krate {
-            None => cx.tcx.is_builtin_derived(item.owner_id.to_def_id()),
-            Some(krate) => {
-                cx.tcx.crate_name(definition.krate).as_str() == krate
-                    && (!derive.check_automatically_derived
-                        || cx.tcx.is_automatically_derived(item.owner_id.to_def_id()))
-            },
-        };
-
-        if !supported {
-            return;
-        }
 
         let Some(adt) = cx
             .tcx
@@ -73,7 +69,7 @@ impl Collector {
         }
 
         let id = cx.tcx.local_def_id_to_hir_id(local);
-        self.facts.record(cx, workspace, expansion.call_site, id, derive.key);
+        self.facts.record(cx, workspace, expansion.call_site, id, derive);
     }
 
     pub(crate) fn analyze(&self, path: &Path, source: &Source, workspace: &Workspace) -> RuleOutput {

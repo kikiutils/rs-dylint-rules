@@ -6,6 +6,7 @@ use ra_ap_syntax::{
     ast,
 };
 
+use super::Derive;
 use crate::{
     diagnostic::{
         Diagnostic,
@@ -19,23 +20,28 @@ use crate::{
 
 pub(super) type SortKey = (usize, usize);
 
-#[cfg(test)]
-pub(super) fn sort_key(name: &str) -> Option<SortKey> {
-    super::DERIVES
-        .iter()
-        .find(|derive| derive.name == name)
-        .map(|derive| derive.key)
-}
-
-fn groups_message() -> String {
-    super::DERIVES
+pub(super) fn groups_message(derives: &[Derive]) -> String {
+    derives
         .chunk_by(|left, right| left.key.0 == right.key.0)
-        .map(|group| group.iter().map(|derive| derive.name).collect::<Vec<_>>().join(", "))
+        .map(|group| {
+            let mut names = Vec::new();
+            for derive in group {
+                if !names.contains(&derive.name) {
+                    names.push(derive.name);
+                }
+            }
+
+            names.join(", ")
+        })
         .collect::<Vec<_>>()
         .join("; ")
 }
 
-pub(super) fn analyze(root: &SyntaxNode, source: &str, resolve: impl Fn(TextRange) -> Option<SortKey>) -> RuleOutput {
+pub(super) fn analyze(
+    root: &SyntaxNode,
+    source: &str,
+    resolve: impl Fn(TextRange) -> Option<&'static Derive>,
+) -> RuleOutput {
     let mut output = RuleOutput::default();
     for attribute in root.descendants().filter_map(ast::Attr::cast) {
         let Some((tree, inner, paths)) = derive_list(&attribute) else {
@@ -46,22 +52,22 @@ pub(super) fn analyze(root: &SyntaxNode, source: &str, resolve: impl Fn(TextRang
             continue;
         }
 
-        let Some(keys) = paths.iter().map(|range| resolve(*range)).collect::<Option<Vec<_>>>() else {
+        let Some(derives) = paths.iter().map(|range| resolve(*range)).collect::<Option<Vec<_>>>() else {
             continue;
         };
 
-        if keys.is_sorted() {
+        if derives.is_sorted_by_key(|derive| derive.key) {
             continue;
         }
 
         let range = attribute.syntax().text_range();
         let diagnostic = Diagnostic {
             range,
-            message: format!("expected derives grouped as {}", groups_message()),
+            message: format!("expected derives grouped as {}", groups_message(super::DERIVES)),
         };
 
         let owner = attribute.syntax().parent();
-        let owner_keys: Vec<_> = owner
+        let owner_derives: Vec<_> = owner
             .iter()
             .flat_map(SyntaxNode::children)
             .filter_map(ast::Attr::cast)
@@ -73,7 +79,7 @@ pub(super) fn analyze(root: &SyntaxNode, source: &str, resolve: impl Fn(TextRang
         let protected = syntax::protected_with(attribute.syntax(), |other| {
             safe_attribute(
                 other,
-                (other.syntax().parent() == owner).then_some(owner_keys.as_slice()),
+                (other.syntax().parent() == owner).then_some(owner_derives.as_slice()),
             )
         });
 
@@ -82,8 +88,8 @@ pub(super) fn analyze(root: &SyntaxNode, source: &str, resolve: impl Fn(TextRang
             continue;
         }
 
-        let mut ordered: Vec<_> = paths.iter().zip(keys).collect();
-        ordered.sort_by_key(|(_, key)| *key);
+        let mut ordered: Vec<_> = paths.iter().zip(derives).collect();
+        ordered.sort_by_key(|(_, derive)| derive.key);
         let replacement = ordered
             .iter()
             .map(|(range, _)| &source[**range])
@@ -164,17 +170,15 @@ fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<
     Some((tree, inner, paths))
 }
 
-fn safe_attribute(attribute: &ast::Attr, owner_keys: Option<&[SortKey]>) -> bool {
+fn safe_attribute(attribute: &ast::Attr, owner_derives: Option<&[&Derive]>) -> bool {
     if derive_meta(attribute).is_some() {
         return true;
     }
 
-    let Some(keys) = owner_keys else { return false };
+    let Some(derives) = owner_derives else { return false };
     let Some(name) = attribute.meta().and_then(|meta| meta.simple_name()) else {
         return false;
     };
 
-    super::DERIVES
-        .iter()
-        .any(|derive| derive.helper == Some(name.as_str()) && keys.contains(&derive.key))
+    derives.iter().any(|derive| derive.helper == Some(name.as_str()))
 }

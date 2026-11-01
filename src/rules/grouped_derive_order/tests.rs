@@ -1,4 +1,8 @@
-use super::analysis;
+use super::{
+    DERIVES,
+    Derive,
+    analysis,
+};
 use crate::{
     diagnostic::RuleOutput,
     test_support::{
@@ -7,11 +11,44 @@ use crate::{
     },
 };
 
+const COLLIDING_DERIVES: &[Derive] = &[
+    Derive {
+        name: "Debug",
+        key: (0, 0),
+        krate: None,
+        helper: None,
+        check_automatically_derived: false,
+    },
+    Derive {
+        name: "Debug",
+        key: (0, 0),
+        krate: Some("first"),
+        helper: Some("first"),
+        check_automatically_derived: true,
+    },
+    Derive {
+        name: "Debug",
+        key: (0, 0),
+        krate: Some("second"),
+        helper: Some("second"),
+        check_automatically_derived: false,
+    },
+];
+
+fn resolved_derive(name: &str) -> Option<&'static Derive> {
+    match name {
+        "Debug" => Some(&COLLIDING_DERIVES[0]),
+        "first::Debug" => Some(&COLLIDING_DERIVES[1]),
+        "second::Debug" => Some(&COLLIDING_DERIVES[2]),
+        _ => DERIVES.iter().find(|derive| derive.name == name),
+    }
+}
+
 fn check(source: &str) -> RuleOutput {
     let root = parse(source);
     analysis::analyze(&root, source, |range| {
         let name = &source[range];
-        analysis::sort_key(name)
+        DERIVES.iter().find(|derive| derive.name == name)
     })
 }
 
@@ -79,7 +116,7 @@ fn preserves_path_spelling_and_raw_crlf_offsets() {
     let root = parse(source);
     let output = analysis::analyze(&root, source, |range| {
         let name = source[range].rsplit("::").next()?;
-        analysis::sort_key(name)
+        DERIVES.iter().find(|derive| derive.name == name)
     });
 
     assert_eq!(
@@ -131,5 +168,68 @@ fn helpers_require_a_matching_derive_on_the_same_item() {
     assert_eq!(
         apply(source, &check(source)),
         source.replace("Eq, PartialEq", "PartialEq, Eq")
+    );
+}
+
+#[test]
+fn matching_checks_name_and_source_before_selecting_an_entry() {
+    let other_source = Derive {
+        krate: Some("other"),
+        ..COLLIDING_DERIVES[1]
+    };
+    assert_ne!(COLLIDING_DERIVES[1], other_source);
+
+    for (name, krate, builtin, automatically_derived, expected) in [
+        ("Debug", "core", true, true, Some(0)),
+        ("Debug", "first", false, true, Some(1)),
+        ("Debug", "second", false, false, Some(2)),
+        ("Debug", "first", false, false, None),
+        ("Debug", "unknown", false, true, None),
+        ("Debug", "core", false, true, None),
+        ("Other", "first", false, true, None),
+    ] {
+        let found = COLLIDING_DERIVES
+            .iter()
+            .find(|derive| derive.matches(name, krate, builtin, automatically_derived));
+        assert_eq!(found, expected.map(|index| &COLLIDING_DERIVES[index]));
+    }
+}
+
+#[test]
+fn helpers_require_the_resolved_identity_not_a_shared_sort_key() {
+    for (path, helper, can_fix) in [
+        ("Debug", "first", false),
+        ("first::Debug", "first", true),
+        ("second::Debug", "first", false),
+        ("second::Debug", "second", true),
+        ("first::Debug", "second", false),
+    ] {
+        let source = format!("#[{helper}(unused)] #[derive(Eq, {path}, PartialEq)] struct Value;");
+        let root = parse(&source);
+        let output = analysis::analyze(&root, &source, |range| resolved_derive(&source[range]));
+        assert_eq!(output.issues.len(), 1, "{source}");
+        assert_eq!(output.issues[0].fix.is_some(), can_fix, "{source}");
+        let expected = if can_fix {
+            source.replace(&format!("Eq, {path}, PartialEq"), &format!("{path}, PartialEq, Eq"))
+        } else {
+            source.clone()
+        };
+        assert_eq!(apply(&source, &output), expected);
+    }
+}
+
+#[test]
+fn shared_sort_keys_preserve_order_and_do_not_repeat_names_in_messages() {
+    let source = "#[derive(Eq, second::Debug, first::Debug, PartialEq)] struct Value;";
+    let root = parse(source);
+    let output = analysis::analyze(&root, source, |range| resolved_derive(&source[range]));
+    assert_eq!(
+        apply(source, &output),
+        "#[derive(second::Debug, first::Debug, PartialEq, Eq)] struct Value;"
+    );
+    assert_eq!(analysis::groups_message(COLLIDING_DERIVES), "Debug");
+    assert_eq!(
+        analysis::groups_message(DERIVES),
+        "Debug; Clone, Copy; Default; PartialEq, Eq, PartialOrd, Ord, Hash; Serialize, Serialize_repr, Deserialize, Deserialize_repr; IsEmpty, EnumIs; EnumCount, VariantNames, VariantArray"
     );
 }

@@ -28,6 +28,7 @@
 | 7 | 列舉資訊 | `EnumCount` → `VariantNames` → `VariantArray` |
 
 - 分組與排序根據 rustc 確認的巨集來源，不只比較最後一段名稱。內建 derive 須由 compiler 確認；Serde derive 須解析至 `serde_derive` crate 的 `Serialize` 或 `Deserialize`，可經由 `serde` re-export、限定路徑或 alias 使用。`IsEmpty` 須來自 `is_empty_derive`；`Serialize_repr`／`Deserialize_repr` 須來自 `serde_repr`；上述 Strum derives 須來自 `strum_macros`，支援經由 `strum` re-export。其他 crate 的同名巨集不列入支援清單。
+- 巨集身分與排序鍵分開保存；來源匹配同時檢查名稱與來源，helper 授權依實際解析的 derive，而不是共用的排序鍵。
 - 每個 `#[derive(...)]` 只整理自己的列表，不合併、拆分、交換 attributes，也不在列表之間搬動 derive。
 - 列表含有任何未知或未支援的 derive 時，整個列表略過，不提供排序診斷或修正，也不要求未知項目移至最後或按字典排序。
 - 某個列表被略過，不阻擋同一 item 上其他純已知列表獨立檢查。

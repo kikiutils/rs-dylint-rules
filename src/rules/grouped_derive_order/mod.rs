@@ -3,6 +3,7 @@ pub(super) mod collect;
 
 rustc_lint_defs::declare_lint! { pub KIKI_GROUPED_DERIVE_ORDER, Warn, "group supported derives in a consistent order" }
 
+#[derive(Debug, PartialEq, Eq)]
 struct Derive {
     name: &'static str,
     key: analysis::SortKey,
@@ -10,6 +11,16 @@ struct Derive {
     krate: Option<&'static str>,
     helper: Option<&'static str>,
     check_automatically_derived: bool,
+}
+
+impl Derive {
+    fn matches(&self, name: &str, krate: &str, builtin: bool, automatically_derived: bool) -> bool {
+        self.name == name
+            && match self.krate {
+                None => builtin,
+                Some(expected) => krate == expected && (!self.check_automatically_derived || automatically_derived),
+            }
+    }
 }
 
 const DERIVES: &[Derive] = &[
