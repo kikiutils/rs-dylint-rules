@@ -135,3 +135,66 @@ fn physical_file_names_do_not_determine_module_ancestry() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn imports_of_current_and_ancestor_modules_are_diagnosed_without_direct_fixes() -> Result<()> {
+    let source = r"pub mod a {
+    use crate::a as Current;
+    pub mod b {
+        use crate::a as Parent;
+        use crate::a::b as Current;
+        pub mod c {
+            use crate::a as Ancestor;
+            use super::super::b as ParentDetour;
+            use super::c as CurrentDetour;
+            use super as CorrectParent;
+            use crate::bridge as ViaReexport;
+        }
+    }
+}
+pub use self::a as bridge;
+";
+    let directory = support::fixture(source)?;
+
+    for fix in [false, true] {
+        let output = support::run(&directory, fix, "kiki_import_path_prefix")?;
+        assert!(output.status.success(), "{output:?}");
+        let diagnostics = support::diagnostics(&output, "kiki_import_path_prefix");
+        let actual: Vec<_> = diagnostics
+            .iter()
+            .map(|diagnostic| {
+                (
+                    diagnostic["message"]["message"].as_str().unwrap_or_default(),
+                    diagnostic["message"]["spans"][0]["text"][0]["text"]
+                        .as_str()
+                        .unwrap_or_default(),
+                )
+            })
+            .collect();
+
+        assert_eq!(
+            actual,
+            [
+                ("expected import prefix `self`", "    use crate::a as Current;"),
+                ("expected import prefix `super`", "        use crate::a as Parent;"),
+                ("expected import prefix `self`", "        use crate::a::b as Current;"),
+                (
+                    "expected import prefix `super::super`",
+                    "            use crate::a as Ancestor;"
+                ),
+                (
+                    "expected import prefix `super`",
+                    "            use super::super::b as ParentDetour;"
+                ),
+                (
+                    "expected import prefix `self`",
+                    "            use super::c as CurrentDetour;"
+                ),
+            ],
+            "{output:?}"
+        );
+    }
+
+    assert_eq!(support::source(&directory)?, source);
+    Ok(())
+}

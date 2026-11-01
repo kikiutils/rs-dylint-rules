@@ -128,8 +128,16 @@ impl Collector {
         while base < depth && consumed < segments.len() {
             let next = ancestors[base + 1];
             let segment = segments[consumed];
+            // A use path's final segment may have Res::Err; its resolved target
+            // is stored on the whole path instead.
+            let resolution = if consumed + 1 == segments.len() {
+                tree.prefix.res.type_ns.unwrap_or(segment.res)
+            } else {
+                segment.res
+            };
+
             if segment.ident.name != cx.tcx.item_name(next.to_def_id())
-                || segment.res != Res::Def(DefKind::Mod, next.to_def_id())
+                || resolution != Res::Def(DefKind::Mod, next.to_def_id())
             {
                 break;
             }
