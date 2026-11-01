@@ -52,16 +52,17 @@ impl Collector {
     }
 
     fn import(&mut self, cx: &LateContext<'_>, workspace: &mut Workspace, tree: &hir::UseTree<'_>, id: hir::HirId) {
-        if let Some(segment) = tree
+        let mut segments = tree
             .prefix
             .segments
             .iter()
-            .find(|segment| segment.ident.name != kw::PathRoot)
-        {
+            .filter(|segment| segment.ident.name != kw::PathRoot);
+
+        if let Some(segment) = segments.next() {
             let group = match origin(segment.res) {
                 Some(group) => Some(group),
                 // A single-segment import may resolve in several namespaces.
-                None if tree.prefix.segments.len() == 1 => {
+                None if segments.next().is_none() => {
                     let mut groups = tree
                         .prefix
                         .res

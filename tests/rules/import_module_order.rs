@@ -5,6 +5,38 @@ use crate::support;
 const CHILD: (&str, &str) = ("src/child.rs", "pub struct Value;\n");
 
 #[test]
+fn relative_and_absolute_crate_imports_are_classified_and_fixed() -> Result<()> {
+    for prefix in ["", "::"] {
+        let source = format!(
+            "use crate::child::Value;\nmod child;\nuse {prefix}std as Standard;\nuse {prefix}core as Core;\nuse {prefix}std::fmt;\n"
+        );
+        let directory = support::fixture_with(&source, &[CHILD])?;
+        let output = support::run(&directory, false, "kiki_import_module_order")?;
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            support::diagnostics(&output, "kiki_import_module_order").len(),
+            1,
+            "{output:?}"
+        );
+
+        let output = support::run(&directory, true, "kiki_import_module_order")?;
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            support::source(&directory)?,
+            format!(
+                "use {prefix}std as Standard;\nuse {prefix}core as Core;\nuse {prefix}std::fmt;\n\nmod child;\n\nuse crate::child::Value;\n"
+            )
+        );
+
+        let output = support::run(&directory, false, "kiki_import_module_order")?;
+        assert!(output.status.success(), "{output:?}");
+        assert!(!support::has_lint(&output, "kiki_import_module_order"), "{output:?}");
+    }
+
+    Ok(())
+}
+
+#[test]
 fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
     let source = "use crate::child::{/* local */ Value};\nmod child;\nuse std::{fmt, /* external */ io};\n";
     let directory = support::fixture_with(source, &[CHILD])?;
