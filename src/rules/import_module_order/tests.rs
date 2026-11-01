@@ -74,8 +74,11 @@ fn known_enclosing_attributes_and_same_line_declarations_allow_edits() {
         let source = format!("{prefix}\nfn run() {{ use crate::A; use std::fmt; }}\n");
         let output = check(&source);
         assert_eq!(output.issues.len(), 1, "{source}");
-        assert!(output.issues[0].fix.is_some(), "{source}");
-        assert!(apply(&source, &output).contains("use std::fmt;\n\nuse crate::A;"));
+        assert_eq!(
+            apply(&source, &output),
+            source.replace("use crate::A; use std::fmt;", "use std::fmt;\n\nuse crate::A;"),
+            "{source}"
+        );
     }
 }
 

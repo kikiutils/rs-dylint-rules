@@ -43,18 +43,7 @@ fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
     let output = support::run(&directory, false, "kiki_import_module_order")?;
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
     let messages = support::diagnostics(&output, "kiki_import_module_order");
-    assert!(!messages.is_empty(), "{output:?}");
-    assert!(messages.iter().any(|message| {
-        message["message"]["children"].as_array().is_some_and(|children| {
-            children.iter().any(|child| {
-                child["spans"].as_array().is_some_and(|spans| {
-                    spans
-                        .iter()
-                        .any(|span| span["suggestion_applicability"] == "MachineApplicable")
-                })
-            })
-        })
-    }));
+    assert_eq!(messages.len(), 1, "{output:?}");
 
     assert_eq!(support::source(&directory)?, source);
     let output = support::run(&directory, true, "kiki_import_module_order")?;
@@ -82,14 +71,14 @@ fn fixes_nested_scopes_and_ignores_inactive_code() -> Result<()> {
     let directory = support::fixture_with(source, &[CHILD])?;
     let output = support::run(&directory, true, "kiki_import_module_order")?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = support::source(&directory)?;
-    assert!(
-        fixed
-            .find("use std::fmt")
-            .is_some_and(|index| index < fixed.find("use crate::child").unwrap_or(0))
+    assert_eq!(
+        support::source(&directory)?,
+        source.replace(
+            "use crate::child::Value;\n    use std::fmt;",
+            "use std::fmt;\n\nuse crate::child::Value;"
+        )
     );
 
-    assert!(fixed.contains("#[cfg(any())] mod missing;"));
     Ok(())
 }
 
@@ -121,14 +110,12 @@ fn imports_inside_a_test_module_can_be_fixed() -> Result<()> {
     let directory = support::fixture(source)?;
     let output = support::run_with_args(&directory, true, &["kiki_import_module_order"], &["--tests"])?;
     assert!(output.status.success(), "{output:?}");
-    let fixed = support::source(&directory)?;
-    assert_ne!(fixed, source);
-    assert!(
-        fixed
-            .find("use std::fmt;")
-            .zip(fixed.find("use crate::Value;"))
-            .is_some_and(|(external, local)| external < local),
-        "{fixed}"
+    assert_eq!(
+        support::source(&directory)?,
+        source.replace(
+            "use crate::Value;\n    use std::fmt;",
+            "use std::fmt;\n\nuse crate::Value;"
+        )
     );
 
     Ok(())
