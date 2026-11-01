@@ -2,6 +2,8 @@
 
 ## 專案定位
 
+個人使用定位與維護取捨以根目錄 [AGENTS.md](../AGENTS.md#專案定位) 為準；本文件只說明共用架構與執行機制。
+
 `kiki-rs-dylint-rules` 是單一 Dylint 動態規則庫，產物為 `cdylib`，不提供獨立執行檔或 compiler driver。檢查與自動修正使用 `cargo dylint`／`cargo dylint --fix`。
 
 各規則的 lint 名稱、實作狀態與 auto-fix 支援程度見[規則索引](rules/README.md)。本文件集中說明已實作規則的共用機制；草案的設計與未決事項留在各規則文件。

@@ -47,7 +47,22 @@ fn combined_fixes_converge_and_are_idempotent() -> Result<()> {
     let output = support::run_lints(&directory, true, support::LINTS)?;
     assert!(output.status.success(), "{output:?}");
     let fixed = support::source(&directory)?;
-    assert_ne!(fixed, SOURCE);
+    assert_eq!(
+        fixed,
+        r#"pub mod nested {
+use anyhow::Error as AnyhowError;
+
+    use std::fmt;
+
+use self::Value as Local;
+    #[derive(PartialEq, Eq)] pub struct Value;
+
+    pub fn error() -> AnyhowError {
+use anyhow::anyhow;
+ anyhow!("error") }
+}
+"#
+    );
 
     let output = support::run_lints(&directory, false, support::LINTS)?;
     assert!(output.status.success(), "{output:?}");

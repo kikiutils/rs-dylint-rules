@@ -553,7 +553,7 @@ fn safe_target(access: &Access, reuse: bool) -> bool {
     // A conditional item initializer without a block offers no local place to
     // insert an import. Do not lift a new binding outside that cfg boundary.
     let insertion_scope = access.target.scope();
-    !(!reuse
-        && insertion_scope.kind() != SyntaxKind::STMT_LIST
-        && syntax::crosses_conditional(&access.node, &insertion_scope))
+    reuse
+        || !(insertion_scope.kind() != SyntaxKind::STMT_LIST
+            && syntax::crosses_conditional(&access.node, &insertion_scope))
 }

@@ -20,8 +20,8 @@ use crate::{
 
 pub(super) type SortKey = (usize, usize);
 
-pub(super) fn groups_message(derives: &[Derive]) -> String {
-    derives
+pub(super) fn groups_message() -> String {
+    super::DERIVES
         .chunk_by(|left, right| left.key.0 == right.key.0)
         .map(|group| {
             let mut names = Vec::new();
@@ -63,7 +63,7 @@ pub(super) fn analyze(
         let range = attribute.syntax().text_range();
         let diagnostic = Diagnostic {
             range,
-            message: format!("expected derives grouped as {}", groups_message(super::DERIVES)),
+            message: format!("expected derives grouped as {}", groups_message()),
         };
 
         let owner = attribute.syntax().parent();

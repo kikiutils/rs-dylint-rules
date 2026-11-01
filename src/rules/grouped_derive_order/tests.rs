@@ -12,14 +12,17 @@ use crate::{
 };
 
 fn resolved_derive(path: &str) -> Option<&'static Derive> {
-    if let Some((prefix, name)) = path.split_once("::") {
+    if let Some((prefix, name)) = path.rsplit_once("::") {
         let krate = match prefix {
             "derive_more" => "derive_more_impl",
             "strum" => "strum_macros",
+            "core::cmp" => "core",
             _ => return None,
         };
 
-        DERIVES.iter().find(|derive| derive.matches(name, krate, false))
+        DERIVES
+            .iter()
+            .find(|derive| derive.matches(name, krate, krate == "core"))
     } else {
         DERIVES.iter().find(|derive| derive.name == path)
     }
@@ -27,10 +30,7 @@ fn resolved_derive(path: &str) -> Option<&'static Derive> {
 
 fn check(source: &str) -> RuleOutput {
     let root = parse(source);
-    analysis::analyze(&root, source, |range| {
-        let name = &source[range];
-        DERIVES.iter().find(|derive| derive.name == name)
-    })
+    analysis::analyze(&root, source, |range| resolved_derive(&source[range]))
 }
 
 #[test]
@@ -98,11 +98,7 @@ fn preserves_path_spelling_and_raw_crlf_offsets() {
     let source =
         "const LABEL: &str = \"型別\";\r\n#[derive(core::cmp::Eq, core::cmp::PartialEq,)]\r\nstruct Value;\r\n";
 
-    let root = parse(source);
-    let output = analysis::analyze(&root, source, |range| {
-        let name = source[range].rsplit("::").next()?;
-        DERIVES.iter().find(|derive| derive.name == name)
-    });
+    let output = check(source);
 
     assert_eq!(
         apply(source, &output),
@@ -197,8 +193,7 @@ fn helpers_require_the_resolved_identity_not_a_shared_name_or_sort_key() {
         ] {
             let derives = format!("Hash, {path}, Clone");
             let source = format!("#[{attribute}] #[derive({derives})] struct Value;");
-            let root = parse(&source);
-            let output = analysis::analyze(&root, &source, |range| resolved_derive(&source[range]));
+            let output = check(&source);
             assert_eq!(output.issues.len(), 1, "{source}");
             let expected = ordered.map_or_else(|| source.clone(), |ordered| source.replace(&derives, ordered));
             assert_eq!(apply(&source, &output), expected, "{source}");
@@ -244,15 +239,14 @@ fn matching_checks_name_and_source_before_selecting_an_entry() {
 #[test]
 fn shared_sort_keys_preserve_order_and_do_not_repeat_names_in_messages() {
     let source = "#[derive(Eq, strum::Display, derive_more::Display, PartialEq)] struct Value;";
-    let root = parse(source);
-    let output = analysis::analyze(&root, source, |range| resolved_derive(&source[range]));
+    let output = check(source);
     assert_eq!(
         apply(source, &output),
         "#[derive(strum::Display, derive_more::Display, PartialEq, Eq)] struct Value;"
     );
 
     assert_eq!(
-        analysis::groups_message(DERIVES),
+        analysis::groups_message(),
         "Debug, Display, Error; Clone, Copy; Default, Constructor; PartialEq, Eq, PartialOrd, Ord, Hash; Serialize, Serialize_repr, Deserialize, Deserialize_repr; IsEmpty, IsVariant, EnumIs; EnumCount, VariantNames, VariantArray, EnumProperty, EnumMessage; From, TryFrom, FromStr, EnumString, FromRepr; AsRef, AsRefStr, AsMut, Deref, DerefMut, Index, IndexMut; Unwrap, TryUnwrap, EnumTryAs; IntoIterator, EnumIter"
     );
 }
