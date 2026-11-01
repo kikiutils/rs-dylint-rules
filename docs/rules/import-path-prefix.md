@@ -164,6 +164,7 @@ use super::super::super::other::OtherType;
 - 只在能確認 module 層級與路徑解析結果不變時，替換路徑前綴。
 - 保留 aliases、可見性、attributes 與註解，不改變匯入目標。
 - 支援一般 imports、aliases、glob 與群組內可獨立替換的前綴。共用前綴的各分支若要求不同修正，或替換必須跨越群組大括號，將無註解的 use tree 拆成獨立 imports，依 rustc 已確認的各分支解析結果同步修正前綴；保留可見性、aliases、glob 與安全 attributes。含註解或自身帶有 `expect`（包含巢狀 `cfg_attr`）的分組不拆分，避免改變註解歸屬或複製 lint expectations。拆分 imports 一律以 LF 分隔，不推導縮排或自行合併，排版交給 rustfmt。
+- 分組拆分時若夾帶 `::std` 等絕對外部路徑，保留該分支的原文（包含其群組、alias 與 glob），不阻擋其他自身 crate 分支的修正，也不因此擴張外部路徑的診斷範圍。
 - 單獨匯入前綴所指的 module 本身時，若修正需要改寫成 `self::{self as Alias}` 或 `super::{self as Alias}` 等群組形式，目前僅診斷。
 - 替換區段含有註解，或 import／同份原文的外層作用域帶有共用安全清單以外的 attributes 時，僅診斷，避免改變註解或 attribute macro 的輸入。
 - 不靠檔案目錄深度猜測 `super::` 數量；以 rustc 提供的 module 結構為準，`#[path]` 本身不阻擋修正。巨集或其他情況若無法確認 module 結構與解析結果，不自動修正。

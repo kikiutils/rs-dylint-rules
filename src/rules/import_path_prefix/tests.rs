@@ -159,33 +159,45 @@ fn split_preserves_visibility_attributes_aliases_and_globs() {
 
 #[test]
 fn split_applies_each_branch_plan_and_preserves_unplanned_routes() {
-    let source = "use {crate::a::{Value as Parent, b::{Local as Own, *}}, crate::bridge::Value as ViaBridge};";
-    let root = parse(source);
-    let imports: Vec<_> = [
-        (&["crate", "a", "Value"][..], 1, 2),
-        (&["crate", "a", "b", "Local"][..], 2, 3),
-        (&["crate", "a", "b"][..], 2, 3),
-    ]
-    .into_iter()
-    .map(|(names, base, consumed)| {
-        let segments = segments(source, names);
-        let Some(plan) = analysis::plan(&segments, 2, base, consumed) else {
-            panic!("missing branch plan")
-        };
+    for route in [
+        "crate::bridge::Value as ViaBridge",
+        "::std as Standard",
+        "::std::fmt as Format",
+        "::std::cmp::*",
+        "::std::{fmt::Display as DisplayAlias, io::{self as Io, Read as _}}",
+        ":: std :: fmt as Format",
+    ] {
+        let source = format!("use {{crate::a::{{Value as Parent, b::{{Local as Own, *}}}}, {route}}};");
+        let root = parse(&source);
+        let imports: Vec<_> = [
+            (&["crate", "a", "Value"][..], 1, 2),
+            (&["crate", "a", "b", "Local"][..], 2, 3),
+            (&["crate", "a", "b"][..], 2, 3),
+        ]
+        .into_iter()
+        .map(|(names, base, consumed)| {
+            let segments = segments(&source, names);
+            let Some(plan) = analysis::plan(&segments, 2, base, consumed) else {
+                panic!("missing branch plan")
+            };
 
-        (segments, plan)
-    })
-    .collect();
-    let plans: Vec<_> = imports
-        .iter()
-        .map(|(segments, plan)| (segments.as_slice(), plan))
-        .collect();
-
-    assert_eq!(
-        analysis::split_import(&root, source, &imports[0].0, &plans),
-        Some(Edit {
-            range: TextRange::new(0.into(), TextSize::of(source)),
-            replacement: "use super::Value as Parent;\nuse self::Local as Own;\nuse self::*;\nuse crate::bridge::Value as ViaBridge;".to_owned(),
+            (segments, plan)
         })
-    );
+        .collect();
+        let plans: Vec<_> = imports
+            .iter()
+            .map(|(segments, plan)| (segments.as_slice(), plan))
+            .collect();
+
+        assert_eq!(
+            analysis::split_import(&root, &source, &imports[0].0, &plans),
+            Some(Edit {
+                range: TextRange::new(0.into(), TextSize::of(&source)),
+                replacement: format!(
+                    "use super::Value as Parent;\nuse self::Local as Own;\nuse self::*;\nuse {route};"
+                ),
+            }),
+            "{route}"
+        );
+    }
 }

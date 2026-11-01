@@ -212,3 +212,55 @@ pub use self::a as bridge;
     assert_eq!(support::source(&directory)?, source);
     Ok(())
 }
+
+#[test]
+fn split_fixes_local_branches_and_preserves_absolute_external_branches() -> Result<()> {
+    let imports = "use {::std as Standard, crate::a::{Value as Parent, b::Local as Own}, ::std::fmt as Format, ::std::{io::Read as _, option::Option as Maybe}, ::std::cmp::*};";
+    let source = format!(
+        r#"pub mod a {{
+    pub struct Value(pub u8);
+    pub mod b {{
+        {imports}
+        pub struct Local;
+        pub fn check() -> Maybe<Ordering> {{
+            let _: Format::Result = Ok(());
+            let _: Standard::vec::Vec<u8> = vec![];
+            let _ = Own;
+            let mut bytes = &b"x"[..];
+            let mut buffer = [0];
+            assert_eq!(bytes.read(&mut buffer).unwrap(), 1);
+            assert_eq!(Parent(buffer[0]).0, b'x');
+            Some(Ordering::Equal)
+        }}
+    }}
+}}
+mod external_only {{ use {{::std::fmt, ::core::cmp}}; }}
+#[test] fn behavior() {{ assert_eq!(a::b::check(), Some(std::cmp::Ordering::Equal)); }}
+"#
+    );
+    let directory = support::fixture(&source)?;
+
+    for fix in [false, true] {
+        let output = support::run(&directory, fix, "kiki_import_path_prefix")?;
+        assert!(output.status.success(), "{output:?}");
+        assert_eq!(
+            support::diagnostics(&output, "kiki_import_path_prefix").len(),
+            if fix { 0 } else { 2 },
+            "{output:?}"
+        );
+
+        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
+        assert!(behavior.status.success(), "{behavior:?}");
+    }
+
+    assert_eq!(
+        support::source(&directory)?,
+        source.replacen(
+            imports,
+            "use ::std as Standard;\nuse super::Value as Parent;\nuse self::Local as Own;\nuse ::std::fmt as Format;\nuse ::std::{io::Read as _, option::Option as Maybe};\nuse ::std::cmp::*;",
+            1
+        )
+    );
+
+    Ok(())
+}

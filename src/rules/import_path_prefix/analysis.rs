@@ -206,9 +206,13 @@ fn flatten(
 ) -> Option<()> {
     let mut segments = prefix.to_vec();
     if let Some(path) = tree.path() {
-        // Absolute extern-prelude paths are not rewritten by this rule.
-        if path.syntax().text().to_string().trim_start().starts_with("::") {
-            return None;
+        // Preserve absolute external branches, including their groups and aliases.
+        if path
+            .first_segment()
+            .is_some_and(|segment| segment.coloncolon_token().is_some())
+        {
+            output.push(tree.syntax().text().to_string());
+            return Some(());
         }
 
         segments.extend(path.segments().map(|segment| Segment {
