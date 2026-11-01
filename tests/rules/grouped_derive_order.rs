@@ -34,17 +34,47 @@ fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists(
             ),
             (
                 "custom/src/lib.rs",
-                "extern crate proc_macro;\n#[proc_macro_derive(Clone)] pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(Serialize)] pub fn serialize(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(IsEmpty)] pub fn empty(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(Serialize_repr)] pub fn repr(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n#[proc_macro_derive(EnumCount)] pub fn count(_: proc_macro::TokenStream) -> proc_macro::TokenStream { proc_macro::TokenStream::new() }\n",
+                r##"extern crate proc_macro;
+#[proc_macro_derive(Clone)]
+pub fn clone(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    "#[automatically_derived] impl Protected {}".parse().unwrap()
+}
+#[proc_macro_derive(Serialize)]
+pub fn serialize(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    "#[automatically_derived] impl ProtectedSerde {}".parse().unwrap()
+}
+#[proc_macro_derive(IsEmpty)]
+pub fn empty(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    "#[automatically_derived] impl ProtectedEmpty {}".parse().unwrap()
+}
+#[proc_macro_derive(Serialize_repr)]
+pub fn repr(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    "#[automatically_derived] impl ProtectedRepr {}".parse().unwrap()
+}
+#[proc_macro_derive(EnumCount)]
+pub fn count(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    "#[automatically_derived] impl ProtectedStrum {}".parse().unwrap()
+}
+"##,
             ),
         ],
     )?;
 
     support::dependency(&directory, "custom={path=\"custom\"}")?;
+    let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
+    assert!(output.status.success(), "{output:?}");
+    let diagnostics = support::diagnostics(&output, "kiki_grouped_derive_order");
+    assert_eq!(diagnostics.len(), 1, "{output:?}");
+    assert_eq!(
+        diagnostics[0]["message"]["spans"][0]["text"][0]["text"],
+        "#[derive(Hash, Eq, PartialEq)]"
+    );
+
     let output = support::run(&directory, true, "kiki_grouped_derive_order")?;
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         support::source(&directory)?,
-        "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Eq, custom::IsEmpty, PartialEq)]\npub struct ProtectedEmpty;\n#[derive(Eq, custom::Serialize_repr, PartialEq)]\npub struct ProtectedRepr;\n#[derive(Eq, custom::EnumCount, PartialEq)]\npub struct ProtectedStrum;\n#[derive(PartialEq, Eq, Hash)]\npub struct Plain;\n"
+        source.replace("Hash, Eq, PartialEq", "PartialEq, Eq, Hash")
     );
 
     Ok(())

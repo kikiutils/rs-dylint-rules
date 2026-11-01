@@ -31,7 +31,7 @@ fn groups_builtin_derives_and_is_idempotent() {
         assert_eq!(output.issues.len(), 1);
         let fixed = apply(source, &output);
         assert_eq!(fixed, expected);
-        assert!(check(&fixed).issues.is_empty(), "{:?}", check(&fixed));
+        assert_eq!(check(&fixed), RuleOutput::default());
     }
 }
 
@@ -106,9 +106,12 @@ fn builtin_attributes_and_resolved_helpers_allow_fixes() {
         );
     }
 
-    for (helper, derives) in [("is_empty", "IsEmpty, Debug"), ("strum", "EnumIs, Debug")] {
+    for (helper, derives, expected) in [
+        ("is_empty", "IsEmpty, Debug", "Debug, IsEmpty"),
+        ("strum", "EnumIs, Debug", "Debug, EnumIs"),
+    ] {
         let source = format!("#[{helper}(unused)] #[derive({derives})] struct Value;");
-        assert_ne!(apply(&source, &check(&source)), source);
+        assert_eq!(apply(&source, &check(&source)), source.replace(derives, expected));
     }
 }
 

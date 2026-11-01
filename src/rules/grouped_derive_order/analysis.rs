@@ -28,18 +28,9 @@ pub(super) fn sort_key(name: &str) -> Option<SortKey> {
 }
 
 fn groups_message() -> String {
-    let mut groups: Vec<Vec<&str>> = Vec::new();
-    for derive in super::DERIVES {
-        if groups.len() <= derive.key.0 {
-            groups.push(Vec::new());
-        }
-
-        groups[derive.key.0].push(derive.name);
-    }
-
-    groups
-        .iter()
-        .map(|group| group.join(", "))
+    super::DERIVES
+        .chunk_by(|left, right| left.key.0 == right.key.0)
+        .map(|group| group.iter().map(|derive| derive.name).collect::<Vec<_>>().join(", "))
         .collect::<Vec<_>>()
         .join("; ")
 }
@@ -95,7 +86,7 @@ pub(super) fn analyze(root: &SyntaxNode, source: &str, resolve: impl Fn(TextRang
         ordered.sort_by_key(|(_, key)| *key);
         let replacement = ordered
             .iter()
-            .map(|(range, _)| source[**range].to_owned())
+            .map(|(range, _)| &source[**range])
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -141,15 +132,13 @@ fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<
     let mut paths = Vec::new();
     let mut start = None;
     let mut end = None;
-    let mut supported = true;
     for element in tree
         .syntax()
         .children_with_tokens()
         .filter(|element| inner.contains_range(element.text_range()))
     {
         if element.as_node().is_some() {
-            supported = false;
-            break;
+            return None;
         }
 
         match element.kind() {
@@ -158,8 +147,7 @@ fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<
                 if let (Some(start), Some(end)) = (start.take(), end.take()) {
                     paths.push(TextRange::new(start, end));
                 } else {
-                    supported = false;
-                    break;
+                    return None;
                 }
             },
             _ => {
@@ -173,7 +161,7 @@ fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<
         paths.push(TextRange::new(start, end));
     }
 
-    supported.then_some((tree, inner, paths))
+    Some((tree, inner, paths))
 }
 
 fn safe_attribute(attribute: &ast::Attr, owner_keys: Option<&[SortKey]>) -> bool {
