@@ -125,6 +125,7 @@ struct Value(u32);
 - 同一 item 或涵蓋待修列表的外層定義帶有未知／未解析的 derive 時，保留已知列表的排序診斷，但不提供修正。
 - 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
 - 定義自身的 `serde`、`is_empty`、`strum`，以及 derive_more 各項已註冊的 helper attributes（如 `debug`、`display`、`from`、`into_iterator`），須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。不在共用安全清單內的其他 attributes，以及外層 helper 同名 attributes，仍只診斷、不修正，避免改變 attribute macro 的輸入。
+- 上述已確認 helper 可由 `cfg_attr` 包裹，支援巢狀及與共用安全 attributes 混用；遞迴檢查所有分支，未啟用分支中的未知 attribute 仍阻擋修正。外層定義的同名 helper 不因此放行，`cfg_attr` 內的 derive 列表仍不處理。
 - 僅替換該 attribute 括號內的列表，保留各 derive 路徑與 alias 的原文及 attribute 外的內容；列表直接以 `", "` 串接，不保留原有尾隨逗號，換行、縮排與尾逗號交由 rustfmt 處理。
 - 不調整 attributes 的位置，不合併或拆分列表，也不對未列入支援清單的第三方／未知 derive 提供自動排序。
 - 列表邊界只在本規則內保留；本 repo 的 rustfmt 啟用 `merge_derives`，之後仍可能合併多個 attributes。

@@ -181,10 +181,20 @@ fn safe_attribute(
             .is_some_and(|(_, _, paths)| paths.into_iter().all(|range| resolve(range).is_some()));
     }
 
-    let Some(derives) = owner_derives else { return false };
-    let Some(name) = attribute.meta().and_then(|meta| meta.simple_name()) else {
-        return false;
-    };
+    attribute
+        .meta()
+        .is_some_and(|meta| safe_helper_meta(meta, owner_derives))
+}
 
-    derives.iter().any(|derive| derive.helper == Some(name.as_str()))
+fn safe_helper_meta(meta: ast::Meta, owner_derives: Option<&[&Derive]>) -> bool {
+    if let ast::Meta::CfgAttrMeta(cfg) = meta {
+        return cfg.metas().all(|meta| safe_helper_meta(meta, owner_derives));
+    }
+
+    let registered_helper = owner_derives.is_some_and(|derives| {
+        meta.simple_name()
+            .is_some_and(|name| derives.iter().any(|derive| derive.helper == Some(name.as_str())))
+    });
+
+    registered_helper || syntax::inert_meta(meta)
 }

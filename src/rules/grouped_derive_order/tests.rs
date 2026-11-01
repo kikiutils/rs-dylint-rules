@@ -136,6 +136,9 @@ fn builtin_attributes_and_resolved_helpers_allow_fixes() {
         "#[repr(C, u8)]",
         "#[repr(/* note */ u8)]",
         "#[serde(rename_all = \"camelCase\")]",
+        "#[cfg_attr(all(), serde(rename_all = \"camelCase\"))]",
+        "#[cfg_attr(any(), serde(rename_all = \"camelCase\"))]",
+        "#[cfg_attr(all(), allow(dead_code), cfg_attr(all(), serde(rename_all = \"camelCase\")))]",
     ] {
         let source = format!(
             "#![allow(dead_code)]\n#[cfg(all())]\nmod nested {{ {attribute}\n#[derive(Deserialize, Serialize, Debug)] struct Value; }}\n"
@@ -162,17 +165,27 @@ fn helpers_require_a_matching_derive_on_the_same_item() {
         "#[serde(other)] #[derive(Eq, PartialEq)] struct Value;",
         "#[serde(other)] mod nested { #[derive(Deserialize, Serialize)] struct Value; }",
         "#[cfg_attr(all(), observe)] #[derive(Eq, PartialEq)] struct Value;",
+        "#[cfg_attr(all(), serde(other))] #[derive(Eq, PartialEq)] struct Value;",
+        "#[cfg_attr(all(), serde(other))] mod nested { #[derive(Deserialize, Serialize)] struct Value; }",
+        "#[cfg_attr(any(), serde(other), observe)] #[derive(Deserialize, Serialize)] struct Value;",
+        "#[cfg_attr(all(), serde(other), cfg_attr(any(), observe))] #[derive(Deserialize, Serialize)] struct Value;",
+        "#[cfg_attr(all(), serde(other), derive(Serialize))] #[derive(Eq, PartialEq)] struct Value;",
     ] {
         let output = check(source);
         assert_eq!(output.issues.len(), 1);
         assert!(output.issues[0].fix.is_none());
     }
 
-    let source = "#[serde(rename_all = \"camelCase\")] #[derive(Serialize)] #[derive(Eq, PartialEq)] struct Value;";
-    assert_eq!(
-        apply(source, &check(source)),
-        source.replace("Eq, PartialEq", "PartialEq, Eq")
-    );
+    for helper in [
+        "serde(rename_all = \"camelCase\")",
+        "cfg_attr(all(), serde(rename_all = \"camelCase\"))",
+    ] {
+        let source = format!("#[{helper}] #[derive(Serialize)] #[derive(Eq, PartialEq)] struct Value;");
+        assert_eq!(
+            apply(&source, &check(&source)),
+            source.replace("Eq, PartialEq", "PartialEq, Eq")
+        );
+    }
 }
 
 #[test]
@@ -189,20 +202,25 @@ fn same_named_builtin_derives_do_not_authorize_third_party_helpers() {
         ("Display", "strum_macros", "strum", true),
         ("Display", "derive_more_impl", "strum", false),
     ] {
-        let source = format!("#[{helper}(unused)] #[derive(Hash, {path}, Clone)] struct Value;");
-        let root = parse(&source);
-        let output = analysis::analyze(&root, &source, |range| {
-            let name = &source[range];
-            if name == path {
-                DERIVES
-                    .iter()
-                    .find(|derive| derive.matches(name, krate, krate == "core", true))
-            } else {
-                DERIVES.iter().find(|derive| derive.matches(name, "core", true, true))
-            }
-        });
-        assert_eq!(output.issues.len(), 1, "{source}");
-        assert_eq!(output.issues[0].fix.is_some(), can_fix, "{source}");
+        for attribute in [
+            format!("{helper}(unused)"),
+            format!("cfg_attr(all(), {helper}(unused))"),
+        ] {
+            let source = format!("#[{attribute}] #[derive(Hash, {path}, Clone)] struct Value;");
+            let root = parse(&source);
+            let output = analysis::analyze(&root, &source, |range| {
+                let name = &source[range];
+                if name == path {
+                    DERIVES
+                        .iter()
+                        .find(|derive| derive.matches(name, krate, krate == "core", true))
+                } else {
+                    DERIVES.iter().find(|derive| derive.matches(name, "core", true, true))
+                }
+            });
+            assert_eq!(output.issues.len(), 1, "{source}");
+            assert_eq!(output.issues[0].fix.is_some(), can_fix, "{source}");
+        }
     }
 }
 

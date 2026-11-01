@@ -111,7 +111,7 @@ fn serde_aliases_and_qualified_paths_sort_and_preserve_roundtrip_behavior() -> R
     let source = r##"#![allow(dead_code)]
 use renamed::{Deserialize as Decode, Serialize as Encode};
 #[derive(Decode, Eq, Encode, Debug, PartialEq)]
-#[serde(crate = "renamed", rename_all = "camelCase")]
+#[cfg_attr(all(), serde(crate = "renamed", rename_all = "camelCase"), allow(dead_code))]
 pub struct Value { pub some_number: u32 }
 #[derive(renamed::Deserialize, renamed::Serialize)]
 #[serde(crate = "renamed")]
@@ -301,7 +301,7 @@ pub fn observe(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 fn derive_more_derives_resolve_helpers_and_preserve_behavior() -> Result<()> {
     let source = r#"use derive_more::{Debug as MoreDebug, Display as MoreDisplay};
 #[derive(derive_more::FromStr, derive_more::Constructor, derive_more::From, MoreDisplay, derive_more::Eq, derive_more::PartialEq, MoreDebug)]
-#[display("number:{_0}")]
+#[cfg_attr(all(), cfg_attr(all(), display("number:{_0}")), allow(dead_code))]
 #[debug("Number({_0})")]
 #[from(u8, u16)]
 pub struct Number(u32);
@@ -402,7 +402,7 @@ pub struct Borrowed<T>(Vec<T>);
 fn additional_strum_derives_preserve_behavior_and_ignore_generated_types() -> Result<()> {
     let source = r#"use strum::Display as Text;
 #[derive(strum::EnumMessage, strum::EnumProperty, strum::EnumIter, strum::FromRepr, strum::EnumString, strum::AsRefStr, Text, PartialEq, Debug)]
-#[strum(serialize_all = "snake_case")]
+#[cfg_attr(all(), strum(serialize_all = "snake_case"))]
 #[repr(u8)]
 pub enum State {
     #[strum(message = "ready", detailed_message = "ready to run", props(color = "green"))]

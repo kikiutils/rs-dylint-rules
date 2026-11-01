@@ -45,7 +45,7 @@ pub(crate) fn crosses_conditional(node: &SyntaxNode, until: &SyntaxNode) -> bool
 
 // These attributes do not inspect the rewritten item tokens.
 // Check every cfg_attr branch, including branches inactive in this compilation.
-fn inert_meta(meta: ast::Meta) -> bool {
+pub(crate) fn inert_meta(meta: ast::Meta) -> bool {
     if let ast::Meta::CfgAttrMeta(meta) = meta {
         return meta.metas().all(inert_meta);
     }
