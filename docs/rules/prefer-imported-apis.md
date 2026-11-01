@@ -36,6 +36,7 @@
 - `anyhow`、`bail`、`ensure` 巨集不得設定 alias；冗餘的 `bail as bail` 與 `Result as Result` 同樣不允許。
 - 若來源已以合規名稱重新匯出，可直接匯入該名稱，不要求再補上同名 `as`。
 - glob 若隱式匯入了上述 API 的不合規名稱（例如 `anyhow::*` 中的 `Error`），仍須診斷，改用符合命名政策的明確 imports；不因此全面禁止其他 glob imports。
+- 經 rustc 確認、名稱合規的 glob bindings 同樣參與「匯入須位於使用點上方」檢查；不要求將這些 glob 展開。
 - 上述命名限制同樣適用於各種可見性的重新匯出；不因使用 `pub use` 而放行。
 - 尚未列入清單的 anyhow API 不新增限制；不把目前政策外推至所有 crate。
 
@@ -93,6 +94,8 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 ## Auto-fix
 
 - 優先重用使用點已可見、位於上方、名稱合規且不帶條件 attributes 的 import；巨集缺少 import 時，優先併入同一 module 上方、同一路徑且無 attributes／註解的既有私有分組 import；其他情況在最近可合法加入 `use` 的作用域開頭新增必要的 imports。函式內的使用點可新增函式內 import，不強制提升至 module。
+- 上述重用也包含合規的 glob bindings；仍檢查名稱遮蔽與條件 attributes，不新增或展開 glob。
+- 同一輪已規劃新增的外層 import，只有在其可見範圍內且位於使用點上方時才可重用，避免在內層重複新增；新的 binding 與依賴它的替換合併為同一份 multipart suggestion，內層仍須通過名稱衝突檢查。
 - 不跨越使用點與所在 module 之間的 `cfg` 邊界提升巨集 import；條件函式或 block 內缺少巨集 import 時，於該條件作用域內新增。module 自身的 `cfg` 同時涵蓋其 imports 與內容，不阻擋 module 內合併。
 - 缺少 `Result` import 時，預設使用 `Result`；若有名稱衝突則僅診斷，不自行改選 alias。已存在的 `AnyhowResult` 可重用；`Error` 一律使用 `AnyhowError`。
 - 只新增實際需要的 imports 並替換相關使用點，不自動匯入全部 API。
@@ -100,6 +103,7 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 - 違規 aliases、公開重新匯出與含有不合規名稱的 glob 目前僅診斷，不自動重新命名或展開，避免漏改其他檔案、巨集及對外 API。
 - 若原限定路徑使用了重新匯出的別名，且新增 import 需要引入被禁止的 alias，僅診斷；已有可重用的合法 import 時仍可替換使用點。
 - 替換範圍有註解、使用點或外層帶有共用安全清單以外的 attributes，或新增檔案頂層 import 會插到既有前置註解與 item 之間時，僅診斷。
+- 新增 import 會置於作用域的 inner attributes 與 inner doc comments（`//!`、`/*! ... */`）之後，不改變文件歸屬；普通前置註解的既有屏障仍保留。
 - 依 rustc 已解析的名稱空間、作用域、imports、型別參數與巨集展開產物檢查衝突；其他作用域的同名項目、不同名稱空間的 binding，以及無關的 derives／巨集呼叫不直接阻擋修正。
 - 檢查新增 import 是否捕獲原有型別路徑；無法確認安全時僅診斷。修正只替換已解析的 API 路徑並新增必要 imports。
 - module 被其他作用域以 glob 匯入時，不在該 module 新增或補入 import，避免改變 glob 使用端的名稱解析；單純含有子模組不阻擋修正。重用既有 import 不受此限制。
@@ -112,3 +116,15 @@ fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
 ## 未決事項或後續規劃
 
 - 違規 aliases 的跨使用點重新命名與 glob 展開，目前僅診斷，尚未提供修正。
+
+### 擴充更多 API 時的架構方向
+
+以下是下一個 crate 或新類型 API 真正加入時的改寫方向，尚未建立通用框架。目前只有 anyhow 政策；不能只新增一個 `Api` variant，就假設來源辨識、名稱衝突及 auto-fix 均已支援。
+
+- **先集中政策，再擴充清單。** 將 namespace／巨集分類、預設名稱、允許的 aliases、import 命名限制及能否新增 alias，收斂到 `Api` 的方法或小型政策資料。避免在 collector、analysis 與 resolution 各處繼續補 `Api::X` 特例；enum 加少量方法即可，不先建立 trait hierarchy、plugin registry 或新增依賴。
+- **衝突候選名稱使用同一份政策。** `resolution::candidate()` 目前另列 anyhow 的名稱；擴充時應由上述政策導出所有允許的名稱及 namespace，避免忘記同步後漏收 bindings／references，誤認新名稱沒有衝突。
+- **來源身分與顯示名稱分開。** `api()` 目前只識別 anyhow，非巨集 API 只接受 crate root 下的定義。支援其他 crate 或子 module API 時，按實際 DefId 的來源與定義路徑擴充匹配；不同 crate 的同名 API 仍保有不同身分。診斷中的 crate／API 名稱也應由政策提供，不在修正流程硬寫 anyhow。
+- **保留可共用的 edit 機制。** `PlannedImport`、`import_edit()` 與 `import_offset()` 繼續處理作用域、上方位置、插入／合併及 multipart suggestion，不負責猜測特定 crate 的命名政策。新的 binding 與依賴它的替換仍須同屬一份 fix；既有 import 與計畫中的 import 均須位於使用點上方。
+- **新的 namespace 另行驗證。** 目前修正涵蓋型別與 bang macros；函式、值、unit／tuple constructors 等 ValueNS 用法不是單純加入清單。須補齊相應的 binding／reference 收集、遮蔽及名稱捕獲檢查，並以實際使用案例驗證。
+
+擴充時沿用完整修正原文比對、修正前後編譯／行為測試及再次 lint 的冪等性驗證；保留 cfg、glob、註解與 inner docs 的既有邊界。不為尚未使用的 API 或假設性組合提前建立框架，也不因新增 API 就複製一套 fix 流程。

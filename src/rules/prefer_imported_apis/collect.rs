@@ -113,10 +113,17 @@ impl Collector {
 
                         if let Res::Def(_, definition) = child.res
                             && let Some(api) = api(cx, definition)
-                            && !api.allows(child.ident.name.as_str())
                             && !tree.prefix.span.from_expansion()
                         {
-                            self.record(cx, workspace, tree.prefix.span, id, api, Kind::Glob);
+                            let kind = if api.allows(child.ident.name.as_str()) {
+                                Kind::Import {
+                                    name: child.ident.name.to_string(),
+                                }
+                            } else {
+                                Kind::Glob
+                            };
+
+                            self.record(cx, workspace, tree.prefix.span, id, api, kind);
                         }
                     }
                 }

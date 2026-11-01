@@ -57,7 +57,15 @@ struct Access {
     qualified: bool,
 }
 
-type FixGroups<'a> = BTreeMap<(bool, u32, u32), Vec<(usize, &'a Access)>>;
+// Process outer scopes first so inner replacements can join their import fix.
+type FixGroups<'a> = BTreeMap<(TextSize, (bool, u32, u32)), Vec<(usize, &'a Access)>>;
+
+struct PlannedImport {
+    scope: SyntaxNode,
+    api: Api,
+    end: TextSize,
+    issue: usize,
+}
 
 // The edit destination is part of the batching key, not incidental access state.
 #[derive(Clone)]
@@ -332,15 +340,13 @@ pub(super) fn analyze<'a>(
         if !access.qualified {
             let name = source[access.range].trim_start_matches("r#").to_owned();
             let scopes = visible_scopes(&access.node);
-            let matching: Vec<_> = imports
+            let mut matching = imports
                 .iter()
                 .filter(|import| import.api == access.api && import.name == name && scopes.contains(&import.scope))
-                .collect();
+                .peekable();
 
-            if !matching.is_empty()
-                && matching
-                    .iter()
-                    .all(|import| import.tree.syntax().text_range().end() > access.range.start())
+            if matching.peek().is_some()
+                && matching.all(|import| import.tree.syntax().text_range().end() > access.range.start())
             {
                 output.report(Diagnostic {
                     range: access.range,
@@ -357,9 +363,13 @@ pub(super) fn analyze<'a>(
             message: format!("import this anyhow API first and use `{}`", access.api.name()),
         });
 
-        groups.entry(access.target.key()).or_default().push((index, access));
+        groups
+            .entry((access.target.scope().text_range().start(), access.target.key()))
+            .or_default()
+            .push((index, access));
     }
 
+    let mut planned_imports: Vec<PlannedImport> = Vec::new();
     for group in groups.values() {
         let mut edits = Vec::new();
         let mut additions = BTreeMap::new();
@@ -379,104 +389,76 @@ pub(super) fn analyze<'a>(
                 })
             });
 
+            let planned = planned_imports.iter().find(|import| {
+                existing.is_none()
+                    && import.api == access.api
+                    && scopes.contains(&import.scope)
+                    && import.end <= access.range.start()
+            });
+            let reuse = existing.is_some() || planned.is_some();
+
             let name = existing.map_or(access.api.name(), |import| import.name.as_str());
-            if !safe_target(access, existing)
+            if !safe_target(access, reuse)
                 || !resolve_name(NameRequest {
                     at: access.range,
                     api: access.api,
                     name,
                     target: access.target.scope().text_range(),
                     module_target: access.target.scope().kind() != SyntaxKind::STMT_LIST,
-                    reuse: existing.is_some(),
+                    reuse,
                 })
             {
                 continue;
             }
 
-            if existing.is_none() && access.api != Api::Error && leaf(&source[access.range]) != name {
+            if !reuse && access.api != Api::Error && leaf(&source[access.range]) != name {
                 // Do not introduce a macro alias or "Result as Result" while
                 // fixing a route that already uses a re-exported alias.
                 continue;
             }
 
-            if existing.is_none() {
+            let edit = Edit {
+                range: access.range,
+                replacement: name.to_owned(),
+            };
+            if let Some(import) = planned {
+                // Keep the new binding and every dependent replacement in one
+                // multipart suggestion; applying only a subset must stay safe.
+                if let Some(fix) = &mut output.issues[import.issue].fix {
+                    fix.edits.push(edit);
+                }
+
+                continue;
+            }
+
+            if !reuse {
                 additions
                     .entry((access.api, &source[access.range]))
                     .or_insert_with(|| name.to_owned());
             }
 
-            edits.push(Edit {
-                range: access.range,
-                replacement: name.to_owned(),
-            });
+            edits.push(edit);
 
             first_issue.get_or_insert(*index);
         }
 
         let Some(index) = first_issue else { continue };
         if !additions.is_empty() {
-            let scope = group[0].1.target.scope();
-            if let ImportTarget::Group { tree, .. } = &group[0].1.target {
-                let Some(list) = tree.use_tree_list() else { continue };
-                let Some(last) = list.use_trees().last() else { continue };
-                let names: BTreeSet<_> = additions.into_values().collect();
-                edits.push(Edit {
-                    range: TextRange::empty(last.syntax().text_range().end()),
-                    replacement: format!(", {}", names.into_iter().collect::<Vec<_>>().join(", ")),
-                });
-
-                output.issues[index].fix = Some(Fix { edits });
+            let target = &group[0].1.target;
+            let Some(edit) = import_edit(target, &additions) else {
                 continue;
-            }
-
-            let preamble_end = scope
-                .children()
-                .find(|node| !ast::AnyAttr::can_cast(node.kind()))
-                .map_or(scope.text_range().end(), |node| node.text_range().start());
-
-            if syntax::has_comments(root, TextRange::new(scope.text_range().start(), preamble_end)) {
-                continue;
-            }
-
-            let offset = if scope.kind() == SyntaxKind::SOURCE_FILE {
-                preamble_end
-            } else {
-                let Some(token) = scope.first_token() else { continue };
-                scope
-                    .children()
-                    .filter_map(ast::Attr::cast)
-                    .last()
-                    .map_or(token.text_range().end(), |attr| attr.syntax().text_range().end())
             };
-
-            let mut statements = String::new();
-            // Multiple qualified routes to the same API need only one binding.
-            let mut names = Vec::new();
-            for ((_, path), name) in additions {
-                if names.contains(&name) {
-                    continue;
-                }
-
-                names.push(name.clone());
-                statements.push_str("use ");
-                statements.push_str(path);
-                if leaf(path) != name {
-                    statements.push_str(" as ");
-                    statements.push_str(&name);
-                }
-
-                statements.push(';');
-                statements.push('\n');
-            }
-
-            if scope.kind() != SyntaxKind::SOURCE_FILE {
-                statements.insert(0, '\n');
-            }
-
-            edits.push(Edit {
-                range: TextRange::empty(offset),
-                replacement: statements,
-            });
+            let end = match target {
+                ImportTarget::Group { tree, .. } => tree.syntax().text_range().end(),
+                ImportTarget::Scope(_) => edit.range.end(),
+            };
+            edits.push(edit);
+            planned_imports.extend(additions.keys().map(|(api, _)| PlannedImport {
+                scope: target.scope(),
+                api: *api,
+                end,
+                issue: index,
+            }));
         }
 
         output.issues[index].fix = Some(Fix { edits });
@@ -485,16 +467,93 @@ pub(super) fn analyze<'a>(
     output
 }
 
+fn import_edit(target: &ImportTarget, additions: &BTreeMap<(Api, &str), String>) -> Option<Edit> {
+    if let ImportTarget::Group { tree, .. } = target {
+        let list = tree.use_tree_list()?;
+        let last = list.use_trees().last()?;
+        let names: BTreeSet<_> = additions.values().map(String::as_str).collect();
+        return Some(Edit {
+            range: TextRange::empty(last.syntax().text_range().end()),
+            replacement: format!(", {}", names.into_iter().collect::<Vec<_>>().join(", ")),
+        });
+    }
+
+    let scope = target.scope();
+    let offset = import_offset(&scope)?;
+    let mut statements = String::new();
+    // Multiple qualified routes to the same API need only one binding.
+    let mut names = Vec::new();
+    for ((_, path), name) in additions {
+        if names.contains(&name.as_str()) {
+            continue;
+        }
+
+        names.push(name.as_str());
+        statements.push_str("use ");
+        statements.push_str(path);
+        if leaf(path) != name {
+            statements.push_str(" as ");
+            statements.push_str(name);
+        }
+
+        statements.push_str(";\n");
+    }
+
+    if scope.kind() != SyntaxKind::SOURCE_FILE {
+        statements.insert(0, '\n');
+    }
+
+    Some(Edit {
+        range: TextRange::empty(offset),
+        replacement: statements,
+    })
+}
+
+fn import_offset(scope: &SyntaxNode) -> Option<TextSize> {
+    let preamble_end = scope
+        .children()
+        .find(|node| !ast::AnyAttr::can_cast(node.kind()))
+        .map_or(scope.text_range().end(), |node| node.text_range().start());
+    let preamble = TextRange::new(scope.text_range().start(), preamble_end);
+
+    // Inner docs describe the scope and stay before its imports. Other comments
+    // retain their existing ownership barrier, including comments within attrs.
+    if scope.descendants_with_tokens().any(|element| {
+        preamble.contains_range(element.text_range())
+            && matches!(element.kind(), SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT)
+            && !element
+                .ancestors()
+                .filter_map(ast::DocComment::cast)
+                .any(|doc| doc.kind() == ast::AttrKind::Inner)
+    }) {
+        return None;
+    }
+
+    if scope.kind() == SyntaxKind::SOURCE_FILE {
+        Some(preamble_end)
+    } else {
+        Some(
+            scope
+                .children()
+                .filter_map(ast::AnyAttr::cast)
+                .last()
+                .map_or(scope.first_token()?.text_range().end(), |attr| {
+                    attr.syntax().text_range().end()
+                }),
+        )
+    }
+}
+
 // The last path segment, as written.
 fn leaf(path: &str) -> &str {
     path.rsplit_once("::").map_or(path, |(_, leaf)| leaf).trim()
 }
 
-fn safe_target(access: &Access, existing: Option<&Import>) -> bool {
+fn safe_target(access: &Access, reuse: bool) -> bool {
     // A conditional item initializer without a block offers no local place to
     // insert an import. Do not lift a new binding outside that cfg boundary.
     let insertion_scope = access.target.scope();
-    !(existing.is_none()
+    !(!reuse
         && insertion_scope.kind() != SyntaxKind::STMT_LIST
         && syntax::crosses_conditional(&access.node, &insertion_scope))
 }
