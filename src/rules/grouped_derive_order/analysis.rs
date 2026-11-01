@@ -80,6 +80,7 @@ pub(super) fn analyze(
             safe_attribute(
                 other,
                 (other.syntax().parent() == owner).then_some(owner_derives.as_slice()),
+                &resolve,
             )
         });
 
@@ -170,9 +171,14 @@ fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<
     Some((tree, inner, paths))
 }
 
-fn safe_attribute(attribute: &ast::Attr, owner_derives: Option<&[&Derive]>) -> bool {
+fn safe_attribute(
+    attribute: &ast::Attr,
+    owner_derives: Option<&[&Derive]>,
+    resolve: &impl Fn(TextRange) -> Option<&'static Derive>,
+) -> bool {
     if derive_meta(attribute).is_some() {
-        return true;
+        return derive_list(attribute)
+            .is_some_and(|(_, _, paths)| paths.into_iter().all(|range| resolve(range).is_some()));
     }
 
     let Some(derives) = owner_derives else { return false };

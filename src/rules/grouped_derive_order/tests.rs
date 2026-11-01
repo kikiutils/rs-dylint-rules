@@ -73,13 +73,13 @@ fn groups_builtin_derives_and_is_idempotent() {
 }
 
 #[test]
-fn separate_attributes_and_unknown_lists_remain_independent() {
-    let source = "#[derive(Eq, PartialEq)]\n#[derive(Copy, Clone)]\n#[derive(Eq, Unknown, PartialEq)]\nstruct Value;\n";
+fn separate_known_attributes_are_fixed_independently() {
+    let source = "#[derive(Eq, PartialEq)]\n#[derive(Copy, Clone)]\nstruct Value;\n";
     let output = check(source);
     assert_eq!(output.issues.len(), 2);
     assert_eq!(
         apply(source, &output),
-        "#[derive(PartialEq, Eq)]\n#[derive(Clone, Copy)]\n#[derive(Eq, Unknown, PartialEq)]\nstruct Value;\n"
+        "#[derive(PartialEq, Eq)]\n#[derive(Clone, Copy)]\nstruct Value;\n"
     );
 }
 
@@ -90,6 +90,10 @@ fn comments_and_other_enclosing_attributes_block_fixes() {
         "#[observe]\n#[derive(Eq, PartialEq)]\nstruct Value;\n",
         "#![observe]\n#[derive(Eq, PartialEq)]\nstruct Value;\n",
         "#[observe]\nmod nested { #[derive(Eq, PartialEq)] struct Value; }\n",
+        "#[derive(Unknown)] #[derive(Eq, PartialEq)] struct Value;",
+        "#[derive(Eq, PartialEq)] #[derive(Unknown)] struct Value;",
+        "#[derive(Eq, Unknown, PartialEq)] #[derive(Eq, PartialEq)] struct Value;",
+        "#[derive(Unknown)] struct Outer([u8; { #[derive(Eq, PartialEq)] struct Inner; 0 }]);",
     ] {
         let output = check(source);
         assert_eq!(output.issues.len(), 1, "{source}");

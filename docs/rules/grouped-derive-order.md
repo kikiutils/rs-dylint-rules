@@ -31,7 +31,7 @@
 - 巨集身分與排序鍵分開保存；來源匹配同時檢查名稱與來源，helper 授權依實際解析的 derive，而不是共用的排序鍵。
 - 每個 `#[derive(...)]` 只整理自己的列表，不合併、拆分、交換 attributes，也不在列表之間搬動 derive。
 - 列表含有任何未知或未支援的 derive 時，整個列表略過，不提供排序診斷或修正，也不要求未知項目移至最後或按字典排序。
-- 某個列表被略過，不阻擋同一 item 上其他純已知列表獨立檢查。
+- 某個列表被略過，不阻擋同一 item 上其他純已知列表獨立診斷，但會阻擋其自動修正，避免改變未知 derive 收到的輸入。
 - `Serialize_repr`／`Deserialize_repr` 分別是一般 Serde derives 的替代方案，不應與實作相同 trait 的一般 derive 重複使用。Strum 僅支援表內四種 derives，其餘仍按未知列表處理。
 - 不新增、移除或去重 derive，不改寫限定路徑、aliases、型別內容、helper attributes 或其他 attributes。重複 derive 與缺少 trait 相依的錯誤仍由 rustc 或其他 lint 處理。
 
@@ -62,7 +62,7 @@ struct Value(u32);
 struct Value;
 ```
 
-假設 `CustomDerive` 可解析且產生合法程式碼，第一個列表不參與排序；第二個列表仍獨立檢查。這不表示對所有未知 derive 的原始順序提供安全保證，只表示本規則不改動它。
+假設 `CustomDerive` 可解析且產生合法程式碼，第一個列表不參與排序；第二個列表仍獨立檢查。這不表示對所有未知 derive 的原始順序提供安全保證，只表示本規則不改動它；此 item 上其他已知列表也只診斷、不自動修正。
 
 ### 內建與 Serde derive 混用
 
@@ -112,6 +112,7 @@ struct Value(u32);
 ## Auto-fix
 
 - 僅修正所有項目皆確認為支援之 derive，且沒有註解或 attribute 障礙的列表。
+- 同一 item 或涵蓋待修列表的外層定義帶有未知／未解析的 derive 時，保留已知列表的排序診斷，但不提供修正。
 - 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
 - 定義自身的 `serde`、`is_empty`、`strum` helper attributes，須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。不在共用安全清單內的其他 attributes，以及外層 helper 同名 attributes，仍只診斷、不修正，避免改變 attribute macro 的輸入。
 - 僅替換該 attribute 括號內的列表，保留各 derive 路徑與 alias 的原文及 attribute 外的內容；列表直接以 `", "` 串接，不保留原有尾隨逗號，換行、縮排與尾逗號交由 rustfmt 處理。

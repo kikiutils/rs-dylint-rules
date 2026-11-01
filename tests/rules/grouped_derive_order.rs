@@ -233,3 +233,62 @@ fn inactive_derives_do_not_produce_facts() -> Result<()> {
     assert!(!support::has_lint(&output, "kiki_grouped_derive_order"), "{output:?}");
     Ok(())
 }
+
+#[test]
+fn unknown_derives_protect_their_input_but_keep_ordering_diagnostics() -> Result<()> {
+    let source = r"#[derive(custom::Observe)]
+#[derive(Eq, PartialEq)]
+pub struct Value;
+#[derive(custom::Observe)]
+pub struct Outer([u8; { #[derive(Eq, PartialEq)] struct Inner; 0 }]);
+#[derive(Hash, Eq, PartialEq)]
+pub struct Plain;
+#[test] fn behavior() {
+    assert!(Value::ORIGINAL_ORDER);
+    assert!(Outer::ORIGINAL_ORDER);
+}
+";
+    let directory = support::fixture_with(
+        source,
+        &[
+            (
+                "custom/Cargo.toml",
+                "[package]\nname=\"custom\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[lib]\nproc-macro=true\n",
+            ),
+            (
+                "custom/src/lib.rs",
+                r#"extern crate proc_macro;
+#[proc_macro_derive(Observe)]
+pub fn observe(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let original = input.to_string().contains("Eq, PartialEq");
+    let mut tokens = input.into_iter();
+    tokens.find(|token| token.to_string() == "struct").unwrap();
+    let name = tokens.next().unwrap();
+    format!("impl {name} {{ pub const ORIGINAL_ORDER: bool = {original}; }}").parse().unwrap()
+}
+"#,
+            ),
+        ],
+    )?;
+
+    support::dependency(&directory, "custom={path=\"custom\"}")?;
+    let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
+    assert!(output.status.success(), "{output:?}");
+    let diagnostics = support::diagnostics(&output, "kiki_grouped_derive_order");
+    assert_eq!(diagnostics.len(), 3, "{output:?}");
+
+    for fix in [false, true] {
+        let output = support::run(&directory, fix, "kiki_grouped_derive_order")?;
+        assert!(output.status.success(), "{output:?}");
+
+        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
+        assert!(behavior.status.success(), "{behavior:?}");
+    }
+
+    assert_eq!(
+        support::source(&directory)?,
+        source.replace("Hash, Eq, PartialEq", "PartialEq, Eq, Hash")
+    );
+
+    Ok(())
+}
