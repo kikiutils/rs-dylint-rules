@@ -120,3 +120,80 @@ fn imports_inside_a_test_module_can_be_fixed() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn resolved_aliases_globs_and_underscore_imports_keep_group_order_and_behavior() -> Result<()> {
+    let imports = "use child::{self as LocalModule, Value as LocalValue};\nuse child::ChildTrait as _;\nuse crate::sibling::*;\nuse LocalModule::Value as SecondValue;\nmod sibling;\nmod child;\nuse library::fmt;\nuse library::fmt::Debug as _;\nuse std as library;\nuse core::option::Option as Optional;\nuse library::cmp::*;\n";
+    let sorted = "use library::fmt;\nuse library::fmt::Debug as _;\nuse std as library;\nuse core::option::Option as Optional;\nuse library::cmp::*;\n\nmod sibling;\nmod child;\n\nuse child::{self as LocalModule, Value as LocalValue};\nuse child::ChildTrait as _;\nuse crate::sibling::*;\nuse LocalModule::Value as SecondValue;\n";
+    let source = [
+        imports,
+        r"
+fn resolve(_: LocalValue, _: SecondValue, _: Sibling) -> Optional<Ordering> {
+    let _: fmt::Result = Ok(());
+    Some(Ordering::Equal)
+}
+#[test] fn behavior() {
+    assert_eq!(resolve(LocalValue, SecondValue, Sibling), Some(Ordering::Equal));
+    assert_eq!(LocalValue::marker(), 7);
+}
+",
+    ]
+    .concat();
+    let directory = support::fixture_with(
+        &source,
+        &[
+            (
+                "src/child.rs",
+                "pub struct Value;\npub trait ChildTrait { fn marker() -> u8 { 7 } }\nimpl ChildTrait for Value {}\n",
+            ),
+            ("src/sibling.rs", "pub struct Sibling;\n"),
+        ],
+    )?;
+
+    for fix in [false, true] {
+        let output = support::run(&directory, fix, "kiki_import_module_order")?;
+        assert!(output.status.success(), "{output:?}");
+        if !fix {
+            assert_eq!(
+                support::diagnostics(&output, "kiki_import_module_order").len(),
+                1,
+                "{output:?}"
+            );
+        }
+
+        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
+        assert!(behavior.status.success(), "{behavior:?}");
+    }
+
+    assert_eq!(support::source(&directory)?, source.replacen(imports, sorted, 1));
+    let output = support::run(&directory, false, "kiki_import_module_order")?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!support::has_lint(&output, "kiki_import_module_order"), "{output:?}");
+    Ok(())
+}
+
+#[test]
+fn real_compiler_barriers_preserve_sources_without_suppressing_diagnostics() -> Result<()> {
+    for source in [
+        "use crate::child::Value;\n// attached\nmod child;\nuse std::fmt;\n",
+        "use crate::child::Value;\nmod child;\nuse std::fmt; // edge\n",
+        "#[allow(unused_imports)] use crate::child::Value;\nmod child;\nuse std::fmt;\n",
+        "use crate::child::Value;\nfn barrier() {}\nmod child;\nuse std::fmt;\n",
+        "use crate::child::Value;\n#[macro_use] mod child;\nuse std::fmt;\nfn invoke() { child_macro!(); }\n",
+        "use {std::fmt::Debug as _, crate::child::ChildTrait as _};\nmod child;\n",
+    ] {
+        let directory = support::fixture_with(
+            source,
+            &[(
+                "src/child.rs",
+                "macro_rules! child_macro { () => {} }\npub struct Value;\npub trait ChildTrait {}\n",
+            )],
+        )?;
+        let output = support::run(&directory, true, "kiki_import_module_order")?;
+        assert!(output.status.success(), "{output:?}");
+        assert!(support::has_lint(&output, "kiki_import_module_order"), "{output:?}");
+        assert_eq!(support::source(&directory)?, source);
+    }
+
+    Ok(())
+}

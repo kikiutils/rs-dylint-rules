@@ -68,23 +68,23 @@ fn check_scope(
 
             let mut groups = Vec::new();
             let complete = collect_groups(&tree, resolve, &mut groups);
-            groups.sort_unstable();
-            groups.dedup();
-
-            if !complete || groups.is_empty() {
+            let Some(&group) = groups.first().filter(|_| complete) else {
                 uncertain = true;
                 output.report(Diagnostic {
                     range: node.text_range(),
                     message: "cannot safely classify this import; its module origin is unresolved or differs between analysis contexts".to_owned(),
                 });
-            } else if groups.len() != 1 {
+                continue;
+            };
+
+            if groups.iter().all(|other| *other == group) {
+                entries.push(Entry { node, group });
+            } else {
                 uncertain = true;
                 output.report(Diagnostic {
                     range: node.text_range(),
                     message: "external and local imports must not be mixed in the same use declaration".to_owned(),
                 });
-            } else {
-                entries.push(Entry { node, group: groups[0] });
             }
         } else if ast::Module::cast(node.clone())
             .is_some_and(|module| module.semicolon_token().is_some() && !is_test_module(&module))
@@ -178,11 +178,5 @@ fn collect_groups(
         return false;
     };
 
-    let mut complete = true;
-
-    for tree in list.use_trees() {
-        complete &= collect_groups(&tree, resolve, groups);
-    }
-
-    complete
+    list.use_trees().all(|tree| collect_groups(&tree, resolve, groups))
 }
