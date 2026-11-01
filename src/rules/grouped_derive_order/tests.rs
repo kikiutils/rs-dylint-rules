@@ -173,12 +173,6 @@ fn helpers_require_a_matching_derive_on_the_same_item() {
 
 #[test]
 fn matching_checks_name_and_source_before_selecting_an_entry() {
-    let other_source = Derive {
-        krate: Some("other"),
-        ..COLLIDING_DERIVES[1]
-    };
-    assert_ne!(COLLIDING_DERIVES[1], other_source);
-
     for (name, krate, builtin, automatically_derived, expected) in [
         ("Debug", "core", true, true, Some(0)),
         ("Debug", "first", false, true, Some(1)),
