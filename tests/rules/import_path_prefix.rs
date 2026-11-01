@@ -39,19 +39,33 @@ pub use crate::a::c::rr::child as bridge;
     let directory = support::fixture(source)?;
     let output = support::run(&directory, true, "kiki_import_path_prefix")?;
     assert!(output.status.success(), "{output:?}");
-    let expected = source
-        .replace("crate::a::c::rr::child", "self::child")
-        .replace("crate::a::c::Parent as ParentAlias", "super::Parent as ParentAlias")
-        .replace("crate::a::b::Sibling", "super::super::b::Sibling")
-        .replace("super::super::super::other", "crate::other")
-        .replace("use child::Local as Bare", "use self::child::Local as Bare")
-        .replace("super::rr::child", "self::child")
-        .replace("use crate::a::Ancestor", "use super::super::Ancestor")
-        .replace("use crate::a::c::Parent", "use super::Parent")
-        .replace(
-            "pub use self::child as bridge",
-            "pub use self::a::c::rr::child as bridge",
-        );
+    let expected = r"use std::fmt;
+mod other { pub struct Other; }
+mod a {
+    pub struct Ancestor;
+    pub mod b { pub struct Sibling; }
+    pub mod c {
+        pub struct Parent;
+        pub mod rr {
+            pub mod child { pub struct Local; }
+            pub use self::child::Local as Public;
+            pub(crate) use super::Parent as ParentAlias;
+            use super::super::b::Sibling;
+            use crate::other::Other;
+            use crate::bridge::Local as ViaBridge;
+            use self::child::Local as Bare;
+            use self::child::Local as Detour;
+            use self::child::{Local as Grouped};
+            fn nested() {
+                use self::child::Local as Function;
+                let _ = || { use super::super::Ancestor; };
+                let _ = async { use super::Parent; };
+            }
+        }
+    }
+}
+pub use self::a::c::rr::child as bridge;
+";
 
     assert_eq!(support::source(&directory)?, expected);
 

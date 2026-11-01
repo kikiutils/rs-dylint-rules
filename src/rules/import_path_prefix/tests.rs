@@ -5,9 +5,13 @@ use ra_ap_syntax::{
 
 use super::analysis::{
     self,
+    Plan,
     Segment,
 };
-use crate::test_support::parse;
+use crate::{
+    diagnostic::Edit,
+    test_support::parse,
+};
 
 fn segments(source: &str, names: &[&str]) -> Vec<Segment> {
     let mut offset = 0;
@@ -32,19 +36,39 @@ fn segments(source: &str, names: &[&str]) -> Vec<Segment> {
 fn prefixes_use_the_closest_non_root_ancestor() {
     let source = "use crate::a::b::Value;";
     let segments = segments(source, &["crate", "a", "b", "Value"]);
-    for (base, consumed, prefix) in [(2, 3, "self"), (1, 2, "super")] {
-        let Some(plan) = analysis::plan(&segments, 2, base, consumed) else {
-            panic!("missing plan")
-        };
-
-        assert_eq!(plan.replacement, prefix);
+    for (base, consumed, end, prefix) in [(2, 3, 15, "self"), (1, 2, 12, "super")] {
+        assert_eq!(
+            analysis::plan(&segments, 2, base, consumed),
+            Some(Plan {
+                range: TextRange::new(4.into(), end.into()),
+                replacement: prefix.to_owned(),
+            })
+        );
     }
+
+    assert_eq!(analysis::plan(&segments, 2, 0, 1), None);
 
     let source = "use super::super::other::Value;";
     let segments = self::segments(source, &["super", "super", "other", "Value"]);
     assert_eq!(
-        analysis::plan(&segments, 2, 0, 2).map(|plan| plan.replacement),
-        Some("crate".to_owned())
+        analysis::plan(&segments, 2, 0, 2),
+        Some(Plan {
+            range: TextRange::new(4.into(), 16.into()),
+            replacement: "crate".to_owned(),
+        })
+    );
+}
+
+#[test]
+fn bare_paths_insert_the_prefix_at_the_first_segment() {
+    let source = "// 型別\r\nuse child::Value;";
+    let segments = segments(source, &["child", "Value"]);
+    assert_eq!(
+        analysis::plan(&segments, 2, 2, 0),
+        Some(Plan {
+            range: TextRange::empty(TextSize::of("// 型別\r\nuse ")),
+            replacement: "self::".to_owned(),
+        })
     );
 }
 
@@ -131,4 +155,37 @@ fn split_preserves_visibility_attributes_aliases_and_globs() {
         let segments = self::segments(source, &["crate", "a", "Value"]);
         assert!(analysis::split_import(&root, source, &segments, &[]).is_none());
     }
+}
+
+#[test]
+fn split_applies_each_branch_plan_and_preserves_unplanned_routes() {
+    let source = "use {crate::a::{Value as Parent, b::{Local as Own, *}}, crate::bridge::Value as ViaBridge};";
+    let root = parse(source);
+    let imports: Vec<_> = [
+        (&["crate", "a", "Value"][..], 1, 2),
+        (&["crate", "a", "b", "Local"][..], 2, 3),
+        (&["crate", "a", "b"][..], 2, 3),
+    ]
+    .into_iter()
+    .map(|(names, base, consumed)| {
+        let segments = segments(source, names);
+        let Some(plan) = analysis::plan(&segments, 2, base, consumed) else {
+            panic!("missing branch plan")
+        };
+
+        (segments, plan)
+    })
+    .collect();
+    let plans: Vec<_> = imports
+        .iter()
+        .map(|(segments, plan)| (segments.as_slice(), plan))
+        .collect();
+
+    assert_eq!(
+        analysis::split_import(&root, source, &imports[0].0, &plans),
+        Some(Edit {
+            range: TextRange::new(0.into(), TextSize::of(source)),
+            replacement: "use super::Value as Parent;\nuse self::Local as Own;\nuse self::*;\nuse crate::bridge::Value as ViaBridge;".to_owned(),
+        })
+    );
 }
