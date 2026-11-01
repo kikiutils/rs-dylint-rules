@@ -395,6 +395,7 @@ pub(super) fn analyze<'a>(
                     && scopes.contains(&import.scope)
                     && import.end <= access.range.start()
             });
+
             let reuse = existing.is_some() || planned.is_some();
 
             let name = existing.map_or(access.api.name(), |import| import.name.as_str());
@@ -421,6 +422,7 @@ pub(super) fn analyze<'a>(
                 range: access.range,
                 replacement: name.to_owned(),
             };
+
             if let Some(import) = planned {
                 // Keep the new binding and every dependent replacement in one
                 // multipart suggestion; applying only a subset must stay safe.
@@ -448,10 +450,12 @@ pub(super) fn analyze<'a>(
             let Some(edit) = import_edit(target, &additions) else {
                 continue;
             };
+
             let end = match target {
                 ImportTarget::Group { tree, .. } => tree.syntax().text_range().end(),
                 ImportTarget::Scope(_) => edit.range.end(),
             };
+
             edits.push(edit);
             planned_imports.extend(additions.keys().map(|(api, _)| PlannedImport {
                 scope: target.scope(),
@@ -514,6 +518,7 @@ fn import_offset(scope: &SyntaxNode) -> Option<TextSize> {
         .children()
         .find(|node| !ast::AnyAttr::can_cast(node.kind()))
         .map_or(scope.text_range().end(), |node| node.text_range().start());
+
     let preamble = TextRange::new(scope.text_range().start(), preamble_end);
 
     // Inner docs describe the scope and stay before its imports. Other comments

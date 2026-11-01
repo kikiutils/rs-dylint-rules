@@ -184,6 +184,7 @@ fn split_applies_each_branch_plan_and_preserves_unplanned_routes() {
             (segments, plan)
         })
         .collect();
+
         let plans: Vec<_> = imports
             .iter()
             .map(|(segments, plan)| (segments.as_slice(), plan))

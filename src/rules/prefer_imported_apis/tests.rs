@@ -25,6 +25,7 @@ fn check(source: &str, free: bool) -> RuleOutput {
         api: Api::Result,
         kind: Kind::Access,
     };
+
     let facts = source
         .match_indices("anyhow::Result")
         .map(|(start, path)| (TextRange::at(TextSize::of(&source[..start]), TextSize::of(path)), &fact));
@@ -70,6 +71,7 @@ fn imports_follow_inner_docs_and_attributes_without_detaching_outer_docs() {
 
     let source =
         "//! Root docs\n// Keep preamble comment\n#![allow(dead_code)]\nfn run() -> anyhow::Result<()> { Ok(()) }";
+
     let output = check(source, true);
     assert_eq!(output.issues.len(), 1);
     assert_eq!(apply(source, &output), source);

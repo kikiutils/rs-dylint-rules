@@ -168,6 +168,7 @@ fn imports_of_current_and_ancestor_modules_are_diagnosed_without_direct_fixes() 
 }
 pub use self::a as bridge;
 ";
+
     let directory = support::fixture(source)?;
 
     for fix in [false, true] {
@@ -238,6 +239,7 @@ mod external_only {{ use {{::std::fmt, ::core::cmp}}; }}
 #[test] fn behavior() {{ assert_eq!(a::b::check(), Some(std::cmp::Ordering::Equal)); }}
 "#
     );
+
     let directory = support::fixture(&source)?;
 
     for fix in [false, true] {

@@ -95,6 +95,7 @@ fn run() -> AppResult<()> { let _: Option<Error> = None; fail!("failed"); }
         .iter()
         .map(|report| report["message"]["spans"][0]["line_start"].as_u64().unwrap_or_default())
         .collect();
+
     assert_eq!(lines, [1, 2, 3, 4, 5, 6, 7, 8, 8, 9], "{reports:?}");
 
     Ok(())
@@ -165,6 +166,7 @@ use passthrough as pass;
 self::pass! { fn generated() -> errors::Result<()> { errors::bail!("bad"); } }
 }
 "#;
+
     let directory = support::fixture(source)?;
 
     support::dependency(
@@ -222,6 +224,7 @@ include!("items.rs");
         fixed,
         "mod plain {\nuse anyhow::Result;\n pub fn run() -> Result<()> { Ok(()) } }\nfn expression() { let _ = include!(\"expression.rs\"); }\ninclude!(\"items.rs\");\n"
     );
+
     assert_eq!(support::read(&directory, "src/expression.rs")?, expression);
     assert_eq!(support::read(&directory, "src/items.rs")?, items);
 
@@ -640,6 +643,7 @@ mod macros {
     assert_eq!(macros::unconditional().unwrap_err().to_string(), "unconditional");
 }
 "#;
+
     let directory = fixture(source)?;
 
     for fix in [false, true] {
@@ -710,6 +714,7 @@ mod conditional {
 }
 #[test] fn behavior() { assert!(reuse::run().is_ok()); }
 "#;
+
     let directory = fixture(source)?;
     support::manifest(&directory, "[features]\ndefault=[\"conditional\"]\nconditional=[]")?;
 
@@ -728,6 +733,7 @@ mod conditional {
                 )
             })
             .collect();
+
         let mut expected = vec![
             (14, "import this anyhow API first and use `AnyhowError`"),
             (17, "place the import for `AnyhowResult` above this use"),
@@ -735,6 +741,7 @@ mod conditional {
             (21, "place the import for `Result` above this use"),
             (27, "import this anyhow API first and use `Result`"),
         ];
+
         if !fix {
             expected.extend([
                 (5, "import this anyhow API first and use `Result`"),
@@ -762,6 +769,7 @@ mod conditional {
     let output = support::cargo(&directory)
         .args(["check", "--no-default-features", "--quiet"])
         .output()?;
+
     assert!(output.status.success(), "{output:?}");
     Ok(())
 }
@@ -777,6 +785,7 @@ fn b() -> Result<()> { ensure!(true); anyhow::bail!("y") }
     assert_eq!(b().unwrap_err().to_string(), "y");
 }
 "#;
+
     let directory = fixture(source)?;
 
     for fix in [false, true] {
@@ -801,5 +810,6 @@ fn b() -> Result<()> { ensure!(true); anyhow::bail!("y") }
         support::diagnostics(&output, "kiki_prefer_imported_apis").is_empty(),
         "{output:?}"
     );
+
     Ok(())
 }
