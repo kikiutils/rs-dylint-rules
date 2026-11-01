@@ -10,6 +10,7 @@ fn relative_and_absolute_crate_imports_are_classified_and_fixed() -> Result<()> 
         let source = format!(
             "use crate::child::Value;\nmod child;\nuse {prefix}std as Standard;\nuse {prefix}core as Core;\nuse {prefix}std::fmt;\n"
         );
+
         let directory = support::fixture_with(&source, &[CHILD])?;
         let output = support::run(&directory, false, "kiki_import_module_order")?;
         assert!(output.status.success(), "{output:?}");
@@ -139,6 +140,7 @@ fn resolve(_: LocalValue, _: SecondValue, _: Sibling) -> Optional<Ordering> {
 ",
     ]
     .concat();
+
     let directory = support::fixture_with(
         &source,
         &[
@@ -189,6 +191,7 @@ fn real_compiler_barriers_preserve_sources_without_suppressing_diagnostics() -> 
                 "macro_rules! child_macro { () => {} }\npub struct Value;\npub trait ChildTrait {}\n",
             )],
         )?;
+
         let output = support::run(&directory, true, "kiki_import_module_order")?;
         assert!(output.status.success(), "{output:?}");
         assert!(support::has_lint(&output, "kiki_import_module_order"), "{output:?}");

@@ -74,6 +74,7 @@ fn check_scope(
                     range: node.text_range(),
                     message: "cannot safely classify this import; its module origin is unresolved or differs between analysis contexts".to_owned(),
                 });
+
                 continue;
             };
 

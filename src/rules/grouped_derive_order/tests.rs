@@ -218,6 +218,7 @@ fn same_named_builtin_derives_do_not_authorize_third_party_helpers() {
                     DERIVES.iter().find(|derive| derive.matches(name, "core", true, true))
                 }
             });
+
             assert_eq!(output.issues.len(), 1, "{source}");
             assert_eq!(output.issues[0].fix.is_some(), can_fix, "{source}");
         }
@@ -238,6 +239,7 @@ fn matching_checks_name_and_source_before_selecting_an_entry() {
         let found = COLLIDING_DERIVES
             .iter()
             .find(|derive| derive.matches(name, krate, builtin, automatically_derived));
+
         assert_eq!(found, expected.map(|index| &COLLIDING_DERIVES[index]));
     }
 }
@@ -261,6 +263,7 @@ fn helpers_require_the_resolved_identity_not_a_shared_sort_key() {
         } else {
             source.clone()
         };
+
         assert_eq!(apply(&source, &output), expected);
     }
 }
@@ -274,6 +277,7 @@ fn shared_sort_keys_preserve_order_and_do_not_repeat_names_in_messages() {
         apply(source, &output),
         "#[derive(second::Debug, first::Debug, PartialEq, Eq)] struct Value;"
     );
+
     assert_eq!(analysis::groups_message(COLLIDING_DERIVES), "Debug");
     assert_eq!(
         analysis::groups_message(DERIVES),

@@ -252,6 +252,7 @@ pub struct Plain;
     assert!(Outer::ORIGINAL_ORDER);
 }
 ";
+
     let directory = support::fixture_with(
         source,
         &[
@@ -362,6 +363,7 @@ pub struct Borrowed<T>(Vec<T>);
     assert_eq!((&borrowed).into_iter().copied().collect::<Vec<_>>(), [2, 4]);
 }
 "#;
+
     let directory = support::fixture(source)?;
     support::dependency(
         &directory,
@@ -390,6 +392,7 @@ pub struct Borrowed<T>(Vec<T>);
         .replace("derive_more::TryUnwrap, derive_more::Unwrap, derive_more::IsVariant, Debug", "Debug, derive_more::IsVariant, derive_more::Unwrap, derive_more::TryUnwrap")
         .replace("derive_more::TryFrom, PartialEq, Debug", "Debug, PartialEq, derive_more::TryFrom")
         .replace("derive_more::IntoIterator, Debug", "Debug, derive_more::IntoIterator");
+
     assert_eq!(support::source(&directory)?, expected);
 
     let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
@@ -433,6 +436,7 @@ pub enum Payload<T> { Value(T), #[strum(disabled)] Hidden(T), Empty }
     assert_eq!(Payload::<u32>::Empty.try_as_value(), None);
 }
 "#;
+
     let directory = support::fixture(source)?;
     support::dependency(
         &directory,
