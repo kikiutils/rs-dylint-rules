@@ -176,6 +176,37 @@ fn helpers_require_a_matching_derive_on_the_same_item() {
 }
 
 #[test]
+fn same_named_builtin_derives_do_not_authorize_third_party_helpers() {
+    for (path, krate, helper, can_fix) in [
+        ("Debug", "core", "debug", false),
+        ("Debug", "derive_more_impl", "debug", true),
+        ("Eq", "core", "eq", false),
+        ("Eq", "derive_more_impl", "eq", true),
+        ("PartialEq", "core", "partial_eq", false),
+        ("PartialEq", "derive_more_impl", "partial_eq", true),
+        ("Display", "strum_macros", "display", false),
+        ("Display", "derive_more_impl", "display", true),
+        ("Display", "strum_macros", "strum", true),
+        ("Display", "derive_more_impl", "strum", false),
+    ] {
+        let source = format!("#[{helper}(unused)] #[derive(Hash, {path}, Clone)] struct Value;");
+        let root = parse(&source);
+        let output = analysis::analyze(&root, &source, |range| {
+            let name = &source[range];
+            if name == path {
+                DERIVES
+                    .iter()
+                    .find(|derive| derive.matches(name, krate, krate == "core", true))
+            } else {
+                DERIVES.iter().find(|derive| derive.matches(name, "core", true, true))
+            }
+        });
+        assert_eq!(output.issues.len(), 1, "{source}");
+        assert_eq!(output.issues[0].fix.is_some(), can_fix, "{source}");
+    }
+}
+
+#[test]
 fn matching_checks_name_and_source_before_selecting_an_entry() {
     for (name, krate, builtin, automatically_derived, expected) in [
         ("Debug", "core", true, true, Some(0)),
@@ -228,6 +259,6 @@ fn shared_sort_keys_preserve_order_and_do_not_repeat_names_in_messages() {
     assert_eq!(analysis::groups_message(COLLIDING_DERIVES), "Debug");
     assert_eq!(
         analysis::groups_message(DERIVES),
-        "Debug; Clone, Copy; Default; PartialEq, Eq, PartialOrd, Ord, Hash; Serialize, Serialize_repr, Deserialize, Deserialize_repr; IsEmpty, EnumIs; EnumCount, VariantNames, VariantArray"
+        "Debug, Display, Error; Clone, Copy; Default, Constructor; PartialEq, Eq, PartialOrd, Ord, Hash; Serialize, Serialize_repr, Deserialize, Deserialize_repr; IsEmpty, IsVariant, EnumIs; EnumCount, VariantNames, VariantArray, EnumProperty, EnumMessage; From, TryFrom, FromStr, EnumString, FromRepr; AsRef, AsRefStr, AsMut, Deref, DerefMut, Index, IndexMut; Unwrap, TryUnwrap, EnumTryAs; IntoIterator, EnumIter"
     );
 }

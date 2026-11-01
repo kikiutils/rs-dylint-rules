@@ -24,7 +24,7 @@ fn fixes_builtin_lists_independently_and_resolves_aliases() -> Result<()> {
 
 #[test]
 fn custom_macros_named_like_supported_derives_do_not_enable_sorting_their_lists() -> Result<()> {
-    let source = "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Eq, custom::IsEmpty, PartialEq)]\npub struct ProtectedEmpty;\n#[derive(Eq, custom::Serialize_repr, PartialEq)]\npub struct ProtectedRepr;\n#[derive(Eq, custom::EnumCount, PartialEq)]\npub struct ProtectedStrum;\n#[derive(Hash, Eq, PartialEq)]\npub struct Plain;\n";
+    let source = "#[derive(Eq, custom::Clone, PartialEq)]\npub struct Protected;\n#[derive(Eq, custom::Serialize, PartialEq)]\npub struct ProtectedSerde;\n#[derive(Eq, custom::IsEmpty, PartialEq)]\npub struct ProtectedEmpty;\n#[derive(Eq, custom::Serialize_repr, PartialEq)]\npub struct ProtectedRepr;\n#[derive(Eq, custom::EnumCount, PartialEq)]\npub struct ProtectedStrum;\n#[derive(Eq, custom::Display, PartialEq)]\npub struct ProtectedDisplay;\n#[derive(Hash, Eq, PartialEq)]\npub struct Plain;\n";
     let directory = support::fixture_with(
         source,
         &[
@@ -54,6 +54,10 @@ pub fn repr(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
 #[proc_macro_derive(EnumCount)]
 pub fn count(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
     "#[automatically_derived] impl ProtectedStrum {}".parse().unwrap()
+}
+#[proc_macro_derive(Display)]
+pub fn display(_: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    "#[automatically_derived] impl ProtectedDisplay {}".parse().unwrap()
 }
 "##,
             ),
@@ -290,5 +294,175 @@ pub fn observe(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
         source.replace("Hash, Eq, PartialEq", "PartialEq, Eq, Hash")
     );
 
+    Ok(())
+}
+
+#[test]
+fn derive_more_derives_resolve_helpers_and_preserve_behavior() -> Result<()> {
+    let source = r#"use derive_more::{Debug as MoreDebug, Display as MoreDisplay};
+#[derive(derive_more::FromStr, derive_more::Constructor, derive_more::From, MoreDisplay, derive_more::Eq, derive_more::PartialEq, MoreDebug)]
+#[display("number:{_0}")]
+#[debug("Number({_0})")]
+#[from(u8, u16)]
+pub struct Number(u32);
+#[derive(derive_more::Error, derive_more::Display, Debug)]
+#[display("failed")]
+#[error(ignore)]
+pub struct Failure;
+#[derive(derive_more::IntoIterator, derive_more::IndexMut, derive_more::Index, derive_more::DerefMut, derive_more::Deref, derive_more::AsMut, derive_more::AsRef, Debug)]
+#[into_iterator(owned, ref, ref_mut)]
+#[deref(forward)]
+#[deref_mut(forward)]
+#[as_ref(Vec<T>)]
+#[as_mut(Vec<T>)]
+pub struct Buffer<T>(Vec<T>);
+#[derive(derive_more::TryUnwrap, derive_more::Unwrap, derive_more::IsVariant, Debug)]
+#[unwrap(owned, ref)]
+#[try_unwrap(owned, ref_mut)]
+pub enum Choice { Value(u32), #[is_variant(ignore)] #[unwrap(ignore)] #[try_unwrap(ignore)] Empty }
+#[derive(derive_more::TryFrom, PartialEq, Debug)]
+#[repr(u8)]
+#[try_from(repr)]
+pub enum Code { One = 1, Two = 2 }
+#[derive(derive_more::IntoIterator, Debug)]
+#[into_iterator(ref, ref_mut)]
+pub struct Borrowed<T>(Vec<T>);
+#[test] fn behavior() {
+    let number = Number::new(7);
+    assert_eq!(number, Number::from(7u8));
+    assert_eq!(number, Number::from(7u16));
+    assert_eq!("7".parse::<Number>().unwrap(), number);
+    assert_eq!(number.to_string(), "number:7");
+    assert_eq!(format!("{number:?}"), "Number(7)");
+    let error: &dyn std::error::Error = &Failure;
+    assert_eq!(error.to_string(), "failed");
+    assert!(error.source().is_none());
+    let mut buffer = Buffer(vec![1, 2]);
+    let view: &Vec<i32> = buffer.as_ref();
+    assert_eq!(view, &[1, 2]);
+    let view: &mut Vec<i32> = buffer.as_mut();
+    view.push(3);
+    buffer[0] = 4;
+    assert_eq!(&*buffer, &[4, 2, 3]);
+    let slice: &mut [i32] = &mut buffer;
+    slice[1] += 1;
+    assert_eq!((&buffer).into_iter().copied().sum::<i32>(), 10);
+    for value in &mut buffer { *value += 1; }
+    assert_eq!(buffer.into_iter().collect::<Vec<_>>(), [5, 4, 4]);
+    let mut choice = Choice::Value(5);
+    assert!(choice.is_value());
+    assert_eq!(*choice.unwrap_value_ref(), 5);
+    *choice.try_unwrap_value_mut().unwrap() = 6;
+    assert_eq!(choice.try_unwrap_value().unwrap(), 6);
+    assert_eq!(Choice::Value(8).unwrap_value(), 8);
+    assert_eq!(Code::try_from(2u8).unwrap(), Code::Two);
+    assert!(Code::try_from(0u8).is_err());
+    let mut borrowed = Borrowed(vec![1, 2]);
+    for value in &mut borrowed { *value *= 2; }
+    assert_eq!((&borrowed).into_iter().copied().collect::<Vec<_>>(), [2, 4]);
+}
+"#;
+    let directory = support::fixture(source)?;
+    support::dependency(
+        &directory,
+        "derive_more={version=\"=2.1.1\",features=[\"debug\",\"display\",\"error\",\"from\",\"try_from\",\"from_str\",\"as_ref\",\"deref\",\"deref_mut\",\"is_variant\",\"eq\",\"constructor\",\"unwrap\",\"try_unwrap\",\"into_iterator\",\"index\",\"index_mut\"]}",
+    )?;
+
+    for fix in [false, true] {
+        let output = support::run(&directory, fix, "kiki_grouped_derive_order")?;
+        assert!(output.status.success(), "{output:?}");
+        if !fix {
+            assert_eq!(
+                support::diagnostics(&output, "kiki_grouped_derive_order").len(),
+                6,
+                "{output:?}"
+            );
+        }
+
+        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
+        assert!(behavior.status.success(), "{behavior:?}");
+    }
+
+    let expected = source
+        .replace("derive_more::FromStr, derive_more::Constructor, derive_more::From, MoreDisplay, derive_more::Eq, derive_more::PartialEq, MoreDebug", "MoreDebug, MoreDisplay, derive_more::Constructor, derive_more::PartialEq, derive_more::Eq, derive_more::From, derive_more::FromStr")
+        .replace("derive_more::Error, derive_more::Display, Debug", "Debug, derive_more::Display, derive_more::Error")
+        .replace("derive_more::IntoIterator, derive_more::IndexMut, derive_more::Index, derive_more::DerefMut, derive_more::Deref, derive_more::AsMut, derive_more::AsRef, Debug", "Debug, derive_more::AsRef, derive_more::AsMut, derive_more::Deref, derive_more::DerefMut, derive_more::Index, derive_more::IndexMut, derive_more::IntoIterator")
+        .replace("derive_more::TryUnwrap, derive_more::Unwrap, derive_more::IsVariant, Debug", "Debug, derive_more::IsVariant, derive_more::Unwrap, derive_more::TryUnwrap")
+        .replace("derive_more::TryFrom, PartialEq, Debug", "Debug, PartialEq, derive_more::TryFrom")
+        .replace("derive_more::IntoIterator, Debug", "Debug, derive_more::IntoIterator");
+    assert_eq!(support::source(&directory)?, expected);
+
+    let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!support::has_lint(&output, "kiki_grouped_derive_order"), "{output:?}");
+    Ok(())
+}
+
+#[test]
+fn additional_strum_derives_preserve_behavior_and_ignore_generated_types() -> Result<()> {
+    let source = r#"use strum::Display as Text;
+#[derive(strum::EnumMessage, strum::EnumProperty, strum::EnumIter, strum::FromRepr, strum::EnumString, strum::AsRefStr, Text, PartialEq, Debug)]
+#[strum(serialize_all = "snake_case")]
+#[repr(u8)]
+pub enum State {
+    #[strum(message = "ready", detailed_message = "ready to run", props(color = "green"))]
+    Ready = 1,
+    Done = 2,
+}
+#[derive(strum::EnumTryAs, PartialEq, Debug)]
+#[strum(crate = "strum")]
+pub enum Payload<T> { Value(T), #[strum(disabled)] Hidden(T), Empty }
+#[test] fn behavior() {
+    use strum::{EnumMessage, EnumProperty, IntoEnumIterator};
+    assert_eq!("ready".parse::<State>().unwrap(), State::Ready);
+    assert!("missing".parse::<State>().is_err());
+    assert_eq!(State::Done.to_string(), "done");
+    let text: &str = State::Ready.as_ref();
+    assert_eq!(text, "ready");
+    assert_eq!(State::from_repr(2), Some(State::Done));
+    assert_eq!(State::from_repr(0), None);
+    assert_eq!(State::iter().collect::<Vec<_>>(), [State::Ready, State::Done]);
+    assert_eq!(State::Ready.get_str("color"), Some("green"));
+    assert_eq!(State::Done.get_str("color"), None);
+    assert_eq!(State::Ready.get_message(), Some("ready"));
+    assert_eq!(State::Ready.get_detailed_message(), Some("ready to run"));
+    let mut value = Payload::Value(7u32);
+    assert_eq!(value.try_as_value_ref(), Some(&7));
+    *value.try_as_value_mut().unwrap() = 8;
+    assert_eq!(value.try_as_value(), Some(8));
+    assert_eq!(Payload::<u32>::Empty.try_as_value(), None);
+}
+"#;
+    let directory = support::fixture(source)?;
+    support::dependency(
+        &directory,
+        "strum={version=\"=0.28.0\",default-features=false,features=[\"derive\"]}",
+    )?;
+
+    for fix in [false, true] {
+        let output = support::run(&directory, fix, "kiki_grouped_derive_order")?;
+        assert!(output.status.success(), "{output:?}");
+        if !fix {
+            assert_eq!(
+                support::diagnostics(&output, "kiki_grouped_derive_order").len(),
+                2,
+                "{output:?}"
+            );
+        }
+
+        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
+        assert!(behavior.status.success(), "{behavior:?}");
+    }
+
+    assert_eq!(
+        support::source(&directory)?,
+        source
+            .replace("strum::EnumMessage, strum::EnumProperty, strum::EnumIter, strum::FromRepr, strum::EnumString, strum::AsRefStr, Text, PartialEq, Debug", "Debug, Text, PartialEq, strum::EnumProperty, strum::EnumMessage, strum::EnumString, strum::FromRepr, strum::AsRefStr, strum::EnumIter")
+            .replace("strum::EnumTryAs, PartialEq, Debug", "Debug, PartialEq, strum::EnumTryAs")
+    );
+
+    let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!support::has_lint(&output, "kiki_grouped_derive_order"), "{output:?}");
     Ok(())
 }

@@ -57,6 +57,7 @@ impl Collector {
             .type_of(item.owner_id)
             .instantiate_identity()
             .skip_norm_wip()
+            .peel_refs()
             .ty_adt_def()
         else {
             return;
