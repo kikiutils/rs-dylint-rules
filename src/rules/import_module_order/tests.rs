@@ -39,7 +39,7 @@ fn orders_groups_without_changing_import_tokens() {
 }
 
 #[test]
-fn reorders_use_trees_with_comments_without_changing_their_text() {
+fn reorders_use_declarations_with_comments_without_changing_their_text() {
     for (source, expected) in [
         (
             "use crate::{/* local */ A};\nmod child;\nuse std::{fmt, /* external */ io};\n",
@@ -52,6 +52,22 @@ fn reorders_use_trees_with_comments_without_changing_their_text() {
         (
             "use crate /* local path */ ::A;\nuse std /* external path */ ::fmt;\n",
             "use std /* external path */ ::fmt;\n\nuse crate /* local path */ ::A;\n",
+        ),
+        (
+            "use /* local */ crate::A;\nuse /* external */ std::fmt;\n",
+            "use /* external */ std::fmt;\n\nuse /* local */ crate::A;\n",
+        ),
+        (
+            "use crate::A /* local */;\nuse std::fmt /* external */;\n",
+            "use std::fmt /* external */;\n\nuse crate::A /* local */;\n",
+        ),
+        (
+            "pub /* local */ use crate::A;\npub(crate /* external */) use std::fmt;\n",
+            "pub(crate /* external */) use std::fmt;\n\npub /* local */ use crate::A;\n",
+        ),
+        (
+            "use // local\ncrate::A;\nuse std::fmt // external\n;\n",
+            "use std::fmt // external\n;\n\nuse // local\ncrate::A;\n",
         ),
     ] {
         let output = check(source);
@@ -105,8 +121,13 @@ fn comments_unknown_attributes_and_intervening_items_block_edits() {
         "// leading\nuse crate::A;\nuse std::io;\n",
         "use crate::A;\nuse std::io; // edge\n",
         "use crate::A;\n/// documented import\nuse std::io;\n",
-        "use crate::A;\nuse /* before tree */ std::io;\n",
-        "use crate::A;\nuse std::io /* after tree */;\n",
+        "/* leading */ use crate::A;\nuse std::io;\n",
+        "/* leading */ pub use crate::A;\npub use std::io;\n",
+        "// leading\npub use crate::A;\npub use std::io;\n",
+        "use crate::A;\n/* attached */ use std::io;\n",
+        "use crate::A; /* trailing */\nuse std::io;\n",
+        "use crate::A;\nuse std::io; /* edge */\n",
+        "use crate::A;\nmod /* module */ child;\nuse std::fmt;\n",
         "use crate::A;\n#[allow(unused_imports)] use std::{/* inner */ io};\n",
         "use crate::A;\nfn unrelated() {}\nuse std::io;\n",
         "#![cfg_attr(any(), token_sensitive)]\nuse crate::A;\nuse std::io;\n",

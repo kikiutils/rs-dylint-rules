@@ -38,7 +38,7 @@ fn relative_and_absolute_crate_imports_are_classified_and_fixed() -> Result<()> 
 
 #[test]
 fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
-    let source = "use crate::child::{/* local */ Value};\nmod child;\nuse std::{fmt, /* external */ io};\n";
+    let source = "pub /* visibility */ use /* local */ crate::child::{/* local tree */ Value} /* local end */;\nmod child;\nuse // external\nstd::{fmt, /* external */ io} /* external end */;\n";
     let directory = support::fixture_with(source, &[CHILD])?;
     let output = support::run(&directory, false, "kiki_import_module_order")?;
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
@@ -50,7 +50,7 @@ fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         support::source(&directory)?,
-        "use std::{fmt, /* external */ io};\n\nmod child;\n\nuse crate::child::{/* local */ Value};\n"
+        "use // external\nstd::{fmt, /* external */ io} /* external end */;\n\nmod child;\n\npub /* visibility */ use /* local */ crate::child::{/* local tree */ Value} /* local end */;\n"
     );
 
     let output = support::run(&directory, false, "kiki_import_module_order")?;

@@ -4,7 +4,10 @@ use ra_ap_syntax::{
     SyntaxKind,
     SyntaxNode,
     TextRange,
-    ast,
+    ast::{
+        self,
+        HasVisibility,
+    },
 };
 
 use super::analysis::Entry;
@@ -32,7 +35,7 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
         return None;
     }
 
-    // Comments inside a use tree move with its unchanged text. Attributes and
+    // Comments inside a use declaration move with its unchanged text. Attributes and
     // other comments remain barriers because their ownership may be unclear.
     if scope.descendants_with_tokens().any(|element| {
         if range.intersect(element.text_range()).is_none() {
@@ -40,7 +43,11 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
         }
 
         match element.kind() {
-            SyntaxKind::COMMENT => !element.ancestors().any(|node| ast::UseTree::can_cast(node.kind())),
+            SyntaxKind::COMMENT => !element
+                .ancestors()
+                .find_map(ast::Use::cast)
+                .and_then(|import| declaration_range(&import))
+                .is_some_and(|range| range.contains_range(element.text_range())),
             kind => ast::AnyAttr::can_cast(kind),
         }
     }) {
@@ -85,4 +92,14 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
     }
 
     Some(Edit { range, replacement })
+}
+
+// Leading comments and attributes belong to the item node but stay outside the moved declaration.
+fn declaration_range(import: &ast::Use) -> Option<TextRange> {
+    let start = match import.visibility() {
+        Some(visibility) => visibility.syntax().text_range().start(),
+        None => import.use_token()?.text_range().start(),
+    };
+
+    Some(TextRange::new(start, import.semicolon_token()?.text_range().end()))
 }
