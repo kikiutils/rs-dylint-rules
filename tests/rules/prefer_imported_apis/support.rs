@@ -1,3 +1,4 @@
+use anyhow::Result;
 use tempfile::TempDir;
 
 use crate::support;
@@ -24,7 +25,7 @@ timers=["dep:tokio"]"#
     )
 }
 
-pub(super) fn check_without_timers(directory: &TempDir) -> anyhow::Result<()> {
+pub(super) fn check_without_timers(directory: &TempDir) -> Result<()> {
     let output = support::cargo(directory)
         .args([
             "check",
@@ -39,7 +40,7 @@ pub(super) fn check_without_timers(directory: &TempDir) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(super) fn fixture(source: &str, dependencies: &str) -> anyhow::Result<TempDir> {
+pub(super) fn fixture(source: &str, dependencies: &str) -> Result<TempDir> {
     let directory = support::fixture(source)?;
     if !dependencies.is_empty() {
         support::dependency(&directory, dependencies)?;
@@ -48,25 +49,25 @@ pub(super) fn fixture(source: &str, dependencies: &str) -> anyhow::Result<TempDi
     Ok(directory)
 }
 
-pub(super) fn accepted(source: &str, dependencies: &str) -> anyhow::Result<()> {
+pub(super) fn accepted(source: &str, dependencies: &str) -> Result<()> {
     let directory = fixture(source, dependencies)?;
     clean(&directory)
 }
 
-pub(super) fn clean(directory: &TempDir) -> anyhow::Result<()> {
+pub(super) fn clean(directory: &TempDir) -> Result<()> {
     let output = support::run(directory, false, LINT)?;
     assert!(output.status.success(), "{output:?}");
     assert!(!support::has_lint(&output, LINT), "{output:?}");
     Ok(())
 }
 
-pub(super) fn fixed(source: &str, dependencies: &str) -> anyhow::Result<(TempDir, String)> {
+pub(super) fn fixed(source: &str, dependencies: &str) -> Result<(TempDir, String)> {
     let (directory, fixed) = rewritten(source, dependencies)?;
     clean(&directory)?;
     Ok((directory, fixed))
 }
 
-pub(super) fn rewritten(source: &str, dependencies: &str) -> anyhow::Result<(TempDir, String)> {
+pub(super) fn rewritten(source: &str, dependencies: &str) -> Result<(TempDir, String)> {
     let directory = fixture(source, dependencies)?;
     let before = support::run(&directory, false, LINT)?;
     assert!(before.status.success(), "{before:?}");
@@ -77,7 +78,7 @@ pub(super) fn rewritten(source: &str, dependencies: &str) -> anyhow::Result<(Tem
     Ok((directory, fixed))
 }
 
-pub(super) fn diagnosed(source: &str, dependencies: &str) -> anyhow::Result<()> {
+pub(super) fn diagnosed(source: &str, dependencies: &str) -> Result<()> {
     let directory = fixture(source, dependencies)?;
     let output = support::run(&directory, false, LINT)?;
     assert!(output.status.success(), "{output:?}");
@@ -85,7 +86,7 @@ pub(super) fn diagnosed(source: &str, dependencies: &str) -> anyhow::Result<()> 
     Ok(())
 }
 
-pub(super) fn unchanged(source: &str, dependencies: &str) -> anyhow::Result<()> {
+pub(super) fn unchanged(source: &str, dependencies: &str) -> Result<()> {
     let directory = fixture(source, dependencies)?;
     let output = support::run(&directory, true, LINT)?;
     assert!(output.status.success(), "{output:?}");

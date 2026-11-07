@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use super::support;
 
 #[test]
-fn disabled_implicit_prelude_does_not_prove_bare_crate_roots() -> anyhow::Result<()> {
+fn disabled_implicit_prelude_does_not_prove_bare_crate_roots() -> Result<()> {
     for source in [
         r#"#[no_implicit_prelude]
 pub mod m {
@@ -47,7 +49,7 @@ pub mod m {
 }
 
 #[test]
-fn explicit_canonical_import_remains_available_without_the_prelude() -> anyhow::Result<()> {
+fn explicit_canonical_import_remains_available_without_the_prelude() -> Result<()> {
     let source = r#"#[no_implicit_prelude]
 pub mod m {
     use ::anyhow;
@@ -62,7 +64,7 @@ pub mod m {
 }
 
 #[test]
-fn ordinary_and_inactive_conditional_preludes_allow_bare_crate_roots() -> anyhow::Result<()> {
+fn ordinary_and_inactive_conditional_preludes_allow_bare_crate_roots() -> Result<()> {
     for attribute in ["", "#[cfg_attr(any(), no_implicit_prelude)]\n"] {
         let source = format!(
             "{attribute}pub mod m {{\n    use ::anyhow as errors;\n    pub fn error() -> errors::Error {{ errors::Error::msg(\"example\") }}\n}}\n"

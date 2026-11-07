@@ -1,9 +1,11 @@
+use anyhow::Result;
+
 use super::support;
 
 const DEPENDENCY: &str = "confique={version=\"=0.4.0\",features=[\"toml\",\"yaml\",\"json5\"]}";
 
 #[test]
-fn qualifies_all_format_templates_and_options_while_preserving_self_generics() -> anyhow::Result<()> {
+fn qualifies_all_format_templates_and_options_while_preserving_self_generics() -> Result<()> {
     let source = r#"use confique as config;
 #[derive(confique::Config)]
 pub struct Settings { enabled: bool }
@@ -29,7 +31,7 @@ fn behavior() {
 }
 
 #[test]
-fn accepts_canonical_format_namespaces_and_unmanaged_config_trait() -> anyhow::Result<()> {
+fn accepts_canonical_format_namespaces_and_unmanaged_config_trait() -> Result<()> {
     support::accepted(
         r"use confique::Config;
 #[derive(Config)]
@@ -45,7 +47,7 @@ impl Settings {
 }
 
 #[test]
-fn diagnoses_direct_template_and_options_imports() -> anyhow::Result<()> {
+fn diagnoses_direct_template_and_options_imports() -> Result<()> {
     support::diagnosed(
         r"use confique::toml::{template, FormatOptions};
 #[derive(confique::Config)]

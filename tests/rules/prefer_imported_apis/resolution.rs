@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use super::support;
 
 #[test]
-fn recognizes_renamed_dependencies_and_reexports_by_their_resolved_identity() -> anyhow::Result<()> {
+fn recognizes_renamed_dependencies_and_reexports_by_their_resolved_identity() -> Result<()> {
     let source = r#"mod bridge { pub use errors::anyhow; }
 pub fn error() -> errors::Error { bridge::anyhow!("example") }
 "#;
@@ -22,7 +24,7 @@ pub fn error() -> errors::Error { bridge::anyhow!("example") }
 }
 
 #[test]
-fn does_not_reuse_a_crate_alias_from_an_unrelated_nested_scope() -> anyhow::Result<()> {
+fn does_not_reuse_a_crate_alias_from_an_unrelated_nested_scope() -> Result<()> {
     let source = r#"pub fn outside() -> errors::Error {
     { use errors as anyhow; let _ = anyhow::Error::msg("inner"); }
     errors::Error::msg("outer")
@@ -65,7 +67,7 @@ fn does_not_reuse_a_crate_alias_from_an_unrelated_nested_scope() -> anyhow::Resu
 }
 
 #[test]
-fn does_not_confuse_same_named_local_functions_or_unrelated_namespaces() -> anyhow::Result<()> {
+fn does_not_confuse_same_named_local_functions_or_unrelated_namespaces() -> Result<()> {
     support::accepted(
         r"mod local {
     pub fn sleep() {}
@@ -78,7 +80,7 @@ pub fn run() { local::sleep(); let _ = local::Error; }
 }
 
 #[test]
-fn rejects_new_direct_imports_that_would_capture_parameters_or_pattern_bindings() -> anyhow::Result<()> {
+fn rejects_new_direct_imports_that_would_capture_parameters_or_pattern_bindings() -> Result<()> {
     for source in [
         r"use std::time::Duration;
 pub async fn run(sleep: fn()) {
@@ -101,7 +103,7 @@ pub async fn run() {
 }
 
 #[test]
-fn permits_module_imports_despite_same_named_value_bindings() -> anyhow::Result<()> {
+fn permits_module_imports_despite_same_named_value_bindings() -> Result<()> {
     let source = r"pub fn id(process: u8) -> (u8, u32) { (process, std::process::id()) }
 ";
 
@@ -118,7 +120,7 @@ fn permits_module_imports_despite_same_named_value_bindings() -> anyhow::Result<
 }
 
 #[test]
-fn rejects_module_imports_that_conflict_in_the_type_namespace() -> anyhow::Result<()> {
+fn rejects_module_imports_that_conflict_in_the_type_namespace() -> Result<()> {
     support::unchanged(
         r"pub fn id<process>() -> u32 { std::process::id() }
 ",
@@ -127,7 +129,7 @@ fn rejects_module_imports_that_conflict_in_the_type_namespace() -> anyhow::Resul
 }
 
 #[test]
-fn reports_direct_imports_below_their_use_without_moving_them() -> anyhow::Result<()> {
+fn reports_direct_imports_below_their_use_without_moving_them() -> Result<()> {
     support::unchanged(
         r"use std::time::Duration;
 pub async fn run() {
@@ -140,7 +142,7 @@ pub async fn run() {
 }
 
 #[test]
-fn preserves_public_reexports_and_disallowed_aliases() -> anyhow::Result<()> {
+fn preserves_public_reexports_and_disallowed_aliases() -> Result<()> {
     support::unchanged(
         r"pub use anyhow::Error as AppError;
 pub use anyhow::Result as AppResult;
@@ -150,7 +152,7 @@ pub use anyhow::Result as AppResult;
 }
 
 #[test]
-fn qualifies_bare_glob_imports_without_expanding_the_glob() -> anyhow::Result<()> {
+fn qualifies_bare_glob_imports_without_expanding_the_glob() -> Result<()> {
     let source = r"use std::process::*;
 pub fn current() -> u32 { id() }
 ";
@@ -161,12 +163,12 @@ pub fn current() -> u32 { id() }
 }
 
 #[test]
-fn bare_function_uses_remain_unchanged_when_the_namespace_is_shadowed() -> anyhow::Result<()> {
+fn bare_function_uses_remain_unchanged_when_the_namespace_is_shadowed() -> Result<()> {
     support::unchanged("use std::process::id;\npub fn current<process>() -> u32 { id() }\n", "")
 }
 
 #[test]
-fn does_not_insert_bindings_into_modules_consumed_by_globs() -> anyhow::Result<()> {
+fn does_not_insert_bindings_into_modules_consumed_by_globs() -> Result<()> {
     support::unchanged(
         r"mod producer {
     pub fn result() -> std::io::Result<()> { Ok(()) }
@@ -178,7 +180,7 @@ fn does_not_insert_bindings_into_modules_consumed_by_globs() -> anyhow::Result<(
 }
 
 #[test]
-fn rejects_imports_whose_crate_root_is_shadowed() -> anyhow::Result<()> {
+fn rejects_imports_whose_crate_root_is_shadowed() -> Result<()> {
     support::unchanged(
         "pub fn current() { mod std {} let _ = ::std::env::current_dir(); }\n",
         "",

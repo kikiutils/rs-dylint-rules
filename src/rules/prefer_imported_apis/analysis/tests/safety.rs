@@ -19,7 +19,7 @@ fn binding_conflicts_keep_diagnostics_without_suggestions() {
 }
 
 #[test]
-fn reuse_only_replacements_survive_an_unsafe_import_insertion() {
+fn file_banners_allow_both_external_reuse_and_new_namespace_imports() {
     let source =
         "// file banner\n\nfn json() -> ::serde_json::Value { todo!() }\nfn io() -> std::io::Result<()> { Ok(()) }\n";
 
@@ -57,7 +57,10 @@ fn reuse_only_replacements_survive_an_unsafe_import_insertion() {
     let output = analyze(source, &facts, true);
     assert_eq!(
         apply(source, &output),
-        source.replace("::serde_json::Value", "serde_json::Value")
+        source
+            .replace("fn json", "use std::io;\nfn json")
+            .replace("::serde_json::Value", "serde_json::Value")
+            .replace("std::io::Result", "io::Result")
     );
 }
 

@@ -1,9 +1,11 @@
+use anyhow::Result;
+
 use crate::support;
 
 const CHILD: (&str, &str) = ("src/child.rs", "pub struct Value;\n");
 
 #[test]
-fn relative_and_absolute_crate_imports_are_classified_and_fixed() -> anyhow::Result<()> {
+fn relative_and_absolute_crate_imports_are_classified_and_fixed() -> Result<()> {
     for prefix in ["", "::"] {
         let source = format!(
             "use crate::child::Value;\nmod child;\nuse {prefix}std as Standard;\nuse {prefix}core as Core;\nuse {prefix}std::fmt;\n"
@@ -36,7 +38,7 @@ fn relative_and_absolute_crate_imports_are_classified_and_fixed() -> anyhow::Res
 }
 
 #[test]
-fn native_diagnostics_offer_fix_and_dylint_applies_it() -> anyhow::Result<()> {
+fn native_diagnostics_offer_fix_and_dylint_applies_it() -> Result<()> {
     let source = "pub /* visibility */ use /* local */ crate::child::{/* local tree */ Value} /* local end */;\nmod child;\nuse // external\nstd::{fmt, /* external */ io} /* external end */;\n";
     let directory = support::fixture_with(source, &[CHILD])?;
     let output = support::run(&directory, false, "kiki_import_module_order")?;
@@ -63,7 +65,7 @@ fn native_diagnostics_offer_fix_and_dylint_applies_it() -> anyhow::Result<()> {
 }
 
 #[test]
-fn fixes_nested_scopes_and_ignores_inactive_code() -> anyhow::Result<()> {
+fn fixes_nested_scopes_and_ignores_inactive_code() -> Result<()> {
     let source =
         "mod child;\nfn run() {\n    use crate::child::Value;\n    use std::fmt;\n}\n#[cfg(any())] mod missing;\n";
 
@@ -82,7 +84,7 @@ fn fixes_nested_scopes_and_ignores_inactive_code() -> anyhow::Result<()> {
 }
 
 #[test]
-fn visible_imports_are_resolved_reordered_and_keep_their_visibility() -> anyhow::Result<()> {
+fn visible_imports_are_resolved_reordered_and_keep_their_visibility() -> Result<()> {
     let source = "pub use crate::child::Value as PublicValue;\npub(crate) use crate::child::Value as CrateValue;\npub(self) use crate::child::Value as PrivateValue;\nmod child;\npub use std::fmt::Debug;\npub(crate) use std::fmt::Display;\nmod nested {\n    pub(super) use crate::child::Value as ParentValue;\n    pub(in crate::nested) use crate::child::Value as NestedValue;\n    pub use std::fmt::Write;\n}\n";
     let directory = support::fixture_with(source, &[CHILD])?;
     let output = support::run(&directory, true, "kiki_import_module_order")?;
@@ -104,7 +106,7 @@ fn visible_imports_are_resolved_reordered_and_keep_their_visibility() -> anyhow:
 }
 
 #[test]
-fn imports_inside_a_test_module_can_be_fixed() -> anyhow::Result<()> {
+fn imports_inside_a_test_module_can_be_fixed() -> Result<()> {
     let source = "pub struct Value;\n#[cfg(test)] mod tests {\n    use crate::Value;\n    use std::fmt;\n}\n";
     let directory = support::fixture(source)?;
     let output = support::run_with_args(&directory, true, &["kiki_import_module_order"], &["--tests"])?;
@@ -121,7 +123,7 @@ fn imports_inside_a_test_module_can_be_fixed() -> anyhow::Result<()> {
 }
 
 #[test]
-fn resolved_aliases_globs_and_underscore_imports_keep_group_order_and_behavior() -> anyhow::Result<()> {
+fn resolved_aliases_globs_and_underscore_imports_keep_group_order_and_behavior() -> Result<()> {
     let imports = "use child::{self as LocalModule, Value as LocalValue};\nuse child::ChildTrait as _;\nuse crate::sibling::*;\nuse LocalModule::Value as SecondValue;\nmod sibling;\nmod child;\nuse library::fmt;\nuse library::fmt::Debug as _;\nuse std as library;\nuse core::option::Option as Optional;\nuse library::cmp::*;\n";
     let sorted = "use library::fmt;\nuse library::fmt::Debug as _;\nuse std as library;\nuse core::option::Option as Optional;\nuse library::cmp::*;\n\nmod sibling;\nmod child;\n\nuse child::{self as LocalModule, Value as LocalValue};\nuse child::ChildTrait as _;\nuse crate::sibling::*;\nuse LocalModule::Value as SecondValue;\n";
     let source = [
@@ -172,7 +174,7 @@ fn resolve(_: LocalValue, _: SecondValue, _: Sibling) -> Optional<Ordering> {
 }
 
 #[test]
-fn real_compiler_barriers_preserve_sources_without_suppressing_diagnostics() -> anyhow::Result<()> {
+fn real_compiler_barriers_preserve_sources_without_suppressing_diagnostics() -> Result<()> {
     for source in [
         "use crate::child::Value;\n// attached\nmod child;\nuse std::fmt;\n",
         "use crate::child::Value;\nmod child;\nuse std::fmt; // edge\n",

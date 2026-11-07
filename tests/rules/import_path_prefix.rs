@@ -1,3 +1,4 @@
+use anyhow::Result;
 use pathkit::{
     SyncFsOps,
     path,
@@ -6,7 +7,7 @@ use pathkit::{
 use crate::support;
 
 #[test]
-fn fixes_resolved_routes_without_shortcutting_reexports() -> anyhow::Result<()> {
+fn fixes_resolved_routes_without_shortcutting_reexports() -> Result<()> {
     let source = r"use std::fmt;
 mod other { pub struct Other; }
 mod a {
@@ -79,7 +80,7 @@ pub use self::a::c::rr::child as bridge;
 }
 
 #[test]
-fn grouped_paths_and_block_local_bindings_keep_their_meaning() -> anyhow::Result<()> {
+fn grouped_paths_and_block_local_bindings_keep_their_meaning() -> Result<()> {
     let source = r"#![cfg_attr(test, allow(dead_code))]
 mod a {
     pub struct Value;
@@ -126,7 +127,7 @@ mod a {
 }
 
 #[test]
-fn physical_file_names_do_not_determine_module_ancestry() -> anyhow::Result<()> {
+fn physical_file_names_do_not_determine_module_ancestry() -> Result<()> {
     let directory = support::fixture("mod a { pub struct Value; #[path = \"../odd.rs\"] mod nested; }\n")?;
     // rustc resolves #[path] relative to the inline module's directory.
     (path!(directory.path()) / "src" / "a").create_dir_sync()?;
@@ -150,7 +151,7 @@ fn physical_file_names_do_not_determine_module_ancestry() -> anyhow::Result<()> 
 }
 
 #[test]
-fn imports_of_current_and_ancestor_modules_are_diagnosed_without_direct_fixes() -> anyhow::Result<()> {
+fn imports_of_current_and_ancestor_modules_are_diagnosed_without_direct_fixes() -> Result<()> {
     let source = r"pub mod a {
     use crate::a as Current;
     pub mod b {
@@ -214,7 +215,7 @@ pub use self::a as bridge;
 }
 
 #[test]
-fn split_fixes_local_branches_and_preserves_absolute_external_branches() -> anyhow::Result<()> {
+fn split_fixes_local_branches_and_preserves_absolute_external_branches() -> Result<()> {
     let imports = "use {::std as Standard, crate::a::{Value as Parent, b::Local as Own}, ::std::fmt as Format, ::std::{io::Read as _, option::Option as Maybe}, ::std::cmp::*};";
     let source = format!(
         r#"pub mod a {{

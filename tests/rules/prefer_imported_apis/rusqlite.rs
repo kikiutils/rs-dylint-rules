@@ -1,9 +1,11 @@
+use anyhow::Result;
+
 use super::support;
 
 const DEPENDENCY: &str = r#"rusqlite={version="=0.41.1",default-features=false,features=["bundled"]}"#;
 
 #[test]
-fn qualifies_rusqlite_errors_and_preserves_enum_patterns_and_behavior() -> anyhow::Result<()> {
+fn qualifies_rusqlite_errors_and_preserves_enum_patterns_and_behavior() -> Result<()> {
     let source = r"use rusqlite as sqlite;
 pub fn missing() -> sqlite::Error { sqlite::Error::QueryReturnedNoRows }
 pub fn index(error: &sqlite::Error) -> usize {
@@ -32,7 +34,7 @@ fn behavior() {
 }
 
 #[test]
-fn accepts_canonical_errors_without_restricting_result_or_connection_aliases() -> anyhow::Result<()> {
+fn accepts_canonical_errors_without_restricting_result_or_connection_aliases() -> Result<()> {
     support::accepted(
         r"use rusqlite as sqlite;
 use rusqlite::Result as SqliteResult;
@@ -43,7 +45,7 @@ pub fn check(_: Option<rusqlite::Error>, _: Option<sqlite::Connection>) -> Sqlit
 }
 
 #[test]
-fn qualifies_bare_and_aliased_errors_without_removing_imports() -> anyhow::Result<()> {
+fn qualifies_bare_and_aliased_errors_without_removing_imports() -> Result<()> {
     for (import, name) in [
         ("use rusqlite::Error;", "Error"),
         ("use rusqlite::Error as SqliteError;", "SqliteError"),

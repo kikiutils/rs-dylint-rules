@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 mod support;
 
 #[test]
-fn rules_preserve_shared_module_sources_and_include_fragments() -> anyhow::Result<()> {
+fn rules_preserve_shared_module_sources_and_include_fragments() -> Result<()> {
     let shared = r#"#[derive(Eq, PartialEq)] pub struct Value;
 use crate::a::Value as Imported;
 use std::fmt;
@@ -35,7 +37,7 @@ pub fn expression() -> u8 { include!("expression.rs") }
 }
 
 #[test]
-fn bom_offsets_point_at_the_original_tokens_and_fixes_preserve_the_prefix() -> anyhow::Result<()> {
+fn bom_offsets_point_at_the_original_tokens_and_fixes_preserve_the_prefix() -> Result<()> {
     for newline in ["\n", "\r\n"] {
         let source = format!("\u{feff}// 型別{newline}#[derive(Eq, PartialEq)]{newline}pub struct Value;{newline}");
         let directory = support::fixture(&source)?;
@@ -65,7 +67,7 @@ fn bom_offsets_point_at_the_original_tokens_and_fixes_preserve_the_prefix() -> a
 }
 
 #[test]
-fn a_source_changed_by_a_macro_warns_once_without_failing_the_build() -> anyhow::Result<()> {
+fn a_source_changed_by_a_macro_warns_once_without_failing_the_build() -> Result<()> {
     let directory = support::fixture_with(
         "#[change::source]\npub fn first() {}\npub fn second() {}\n",
         &[

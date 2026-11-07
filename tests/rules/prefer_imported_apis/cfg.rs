@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use super::support;
 
 #[test]
-fn does_not_hoist_imports_out_of_conditional_statements() -> anyhow::Result<()> {
+fn does_not_hoist_imports_out_of_conditional_statements() -> Result<()> {
     for attribute in [
         r#"#[cfg(feature = "timers")]"#,
         r#"#[cfg_attr(not(feature = "timers"), cfg(any()))]"#,
@@ -22,7 +24,7 @@ fn does_not_hoist_imports_out_of_conditional_statements() -> anyhow::Result<()> 
 }
 
 #[test]
-fn keeps_new_imports_inside_conditional_initializer_blocks() -> anyhow::Result<()> {
+fn keeps_new_imports_inside_conditional_initializer_blocks() -> Result<()> {
     let source = r#"pub fn run() {
     #[cfg(feature = "timers")]
     let delay = { tokio::time::sleep(std::time::Duration::ZERO) };
@@ -39,7 +41,7 @@ fn keeps_new_imports_inside_conditional_initializer_blocks() -> anyhow::Result<(
 }
 
 #[test]
-fn reuses_existing_bindings_inside_conditional_statements() -> anyhow::Result<()> {
+fn reuses_existing_bindings_inside_conditional_statements() -> Result<()> {
     let source = r#"#[cfg(feature = "timers")]
 pub fn run() {
     use tokio::time::sleep;

@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use crate::support;
 
 #[test]
-fn fixes_statements_items_and_cfg_disabled_code_and_is_idempotent() -> anyhow::Result<()> {
+fn fixes_statements_items_and_cfg_disabled_code_and_is_idempotent() -> Result<()> {
     let source = r"fn one() {} // trailing
 fn two() {}
 #[cfg(any())]

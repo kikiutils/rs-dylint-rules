@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use super::support;
 
 #[test]
-fn qualifies_imported_function_aliases_without_losing_turbofish() -> anyhow::Result<()> {
+fn qualifies_imported_function_aliases_without_losing_turbofish() -> Result<()> {
     let source = r#"use serde_json::from_str as parse_json;
 pub fn parse() -> serde_json::Result<u8> { parse_json::<u8>("7") }
 "#;
@@ -12,7 +14,7 @@ pub fn parse() -> serde_json::Result<u8> { parse_json::<u8>("7") }
 }
 
 #[test]
-fn qualifies_json_functions_and_generic_types_without_renaming_trait_imports() -> anyhow::Result<()> {
+fn qualifies_json_functions_and_generic_types_without_renaming_trait_imports() -> Result<()> {
     let source = r"use serde_json as json;
 use serde::Serialize;
 #[derive(Serialize)]
@@ -34,7 +36,7 @@ pub fn map(_: Option<json::Error>) -> json::Map<String, json::Value> { json::Map
 }
 
 #[test]
-fn qualifies_toml_functions_values_and_tables() -> anyhow::Result<()> {
+fn qualifies_toml_functions_values_and_tables() -> Result<()> {
     let source = r#"use toml as format;
 pub fn parse() -> format::Value {
     let table: format::Table = format::from_str("answer = 42").unwrap();
@@ -50,7 +52,7 @@ pub fn parse() -> format::Value {
 }
 
 #[test]
-fn qualifies_messagepack_postcard_and_cbor_conversions_and_preserves_roundtrips() -> anyhow::Result<()> {
+fn qualifies_messagepack_postcard_and_cbor_conversions_and_preserves_roundtrips() -> Result<()> {
     let source = r"use rmp_serde as msgpack;
 use postcard as binary;
 use ciborium as cbor;
@@ -87,7 +89,7 @@ fn behavior() { assert_eq!(roundtrip(), (7, 8, 9)); }
 }
 
 #[test]
-fn qualifies_hex_functions_but_allows_the_conversion_trait() -> anyhow::Result<()> {
+fn qualifies_hex_functions_but_allows_the_conversion_trait() -> Result<()> {
     let source = r#"use hex as encoding;
 use hex::ToHex;
 pub fn hexadecimal() -> String {

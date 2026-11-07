@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use super::support;
 
 #[test]
-fn qualifies_the_original_expression_inside_pathkit_and_a_closure() -> anyhow::Result<()> {
+fn qualifies_the_original_expression_inside_pathkit_and_a_closure() -> Result<()> {
     let source = r"use std::{cell::OnceCell, env::current_dir};
 use pathkit::{Path, SyncFsOps, path};
 pub fn root() -> Option<Path> {
@@ -22,7 +24,7 @@ pub fn root() -> Option<Path> {
 }
 
 #[test]
-fn qualifies_resolved_expression_arguments_in_standard_macros() -> anyhow::Result<()> {
+fn qualifies_resolved_expression_arguments_in_standard_macros() -> Result<()> {
     for source in [
         r#"pub fn value() -> String { format!("pid={}", std::process::id()) }
 "#,
@@ -41,7 +43,7 @@ fn qualifies_resolved_expression_arguments_in_standard_macros() -> anyhow::Resul
 }
 
 #[test]
-fn rewrites_repeated_arguments_once_without_rewriting_the_macro_definition() -> anyhow::Result<()> {
+fn rewrites_repeated_arguments_once_without_rewriting_the_macro_definition() -> Result<()> {
     let source = r"macro_rules! evaluate { ($value:expr) => { ($value, $value, std::process::id()) }; }
 pub fn values() -> (u32, u32, u32) { evaluate!(std::process::id()) }
 ";
@@ -59,7 +61,7 @@ pub fn values() -> (u32, u32, u32) { evaluate!(std::process::id()) }
 }
 
 #[test]
-fn does_not_guess_api_paths_from_unevaluated_tokens() -> anyhow::Result<()> {
+fn does_not_guess_api_paths_from_unevaluated_tokens() -> Result<()> {
     support::accepted(
         r"pub fn text() -> &'static str { stringify!(std::process::id()) }
 ",
@@ -68,7 +70,7 @@ fn does_not_guess_api_paths_from_unevaluated_tokens() -> anyhow::Result<()> {
 }
 
 #[test]
-fn expression_fragments_use_the_callers_rust_edition() -> anyhow::Result<()> {
+fn expression_fragments_use_the_callers_rust_edition() -> Result<()> {
     let source = r#"fn gen() -> u8 { 7 }
 pub fn text() -> String { format!("{}:{}", gen(), std::process::id()) }
 "#;
@@ -89,7 +91,7 @@ pub fn text() -> String { format!("{}:{}", gen(), std::process::id()) }
 }
 
 #[test]
-fn does_not_project_outer_imports_into_nested_input_modules() -> anyhow::Result<()> {
+fn does_not_project_outer_imports_into_nested_input_modules() -> Result<()> {
     support::accepted(
         r"macro_rules! evaluate { ($value:expr) => { $value }; }
 pub fn id() -> u32 {
@@ -104,7 +106,7 @@ pub fn id() -> u32 {
 }
 
 #[test]
-fn does_not_import_outside_modules_created_by_macro_expansion() -> anyhow::Result<()> {
+fn does_not_import_outside_modules_created_by_macro_expansion() -> Result<()> {
     for source in [
         r"macro_rules! wrap { ($value:expr) => { mod inner { pub fn id() -> u32 { $value } } }; }
 wrap!(std::process::id());
@@ -120,7 +122,7 @@ pub fn id() -> u32 { wrap!(std::process::id()); inner::id() }
 }
 
 #[test]
-fn macro_arguments_still_respect_namespace_conflicts() -> anyhow::Result<()> {
+fn macro_arguments_still_respect_namespace_conflicts() -> Result<()> {
     support::unchanged(
         r#"pub fn text<process>() -> String { format!("{}", std::process::id()) }
 "#,
@@ -129,7 +131,7 @@ fn macro_arguments_still_respect_namespace_conflicts() -> anyhow::Result<()> {
 }
 
 #[test]
-fn repeated_arguments_require_safe_names_in_every_expansion_scope() -> anyhow::Result<()> {
+fn repeated_arguments_require_safe_names_in_every_expansion_scope() -> Result<()> {
     support::unchanged(
         r"macro_rules! twice { ($value:expr) => {{
     let first = $value;
@@ -143,7 +145,7 @@ pub fn values() -> (u32, u32) { twice!(std::process::id()) }
 }
 
 #[test]
-fn repeated_bare_arguments_preserve_different_original_resolutions() -> anyhow::Result<()> {
+fn repeated_bare_arguments_preserve_different_original_resolutions() -> Result<()> {
     support::unchanged(
         r"use std::process::id;
 macro_rules! twice { ($value:expr) => {{
@@ -158,7 +160,7 @@ pub fn values() -> (u32, u32) { twice!(id()) }
 }
 
 #[test]
-fn macro_arguments_do_not_hoist_imports_out_of_conditional_statements() -> anyhow::Result<()> {
+fn macro_arguments_do_not_hoist_imports_out_of_conditional_statements() -> Result<()> {
     let sources = [
         r#"pub fn run() {
     #[cfg(feature = "timers")]

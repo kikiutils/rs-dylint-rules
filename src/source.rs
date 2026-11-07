@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use anyhow::{
     Context,
+    Result,
     anyhow,
     ensure,
 };
@@ -38,7 +39,7 @@ impl Source {
         }
     }
 
-    fn read(cx: &LateContext<'_>, path: &Path, anchor: Span) -> anyhow::Result<Self> {
+    fn read(cx: &LateContext<'_>, path: &Path, anchor: Span) -> Result<Self> {
         let text = path
             .read_to_string_sync()
             .with_context(|| format!("Failed to read {path}"))?;
@@ -81,7 +82,7 @@ fn normalized(text: &str) -> String {
     text.strip_prefix('\u{feff}').unwrap_or(text).replace("\r\n", "\n")
 }
 
-fn parse(text: &str, edition: Edition) -> anyhow::Result<SourceFile> {
+fn parse(text: &str, edition: Edition) -> Result<SourceFile> {
     // Preserve original byte offsets, including BOM and CRLF, for rustc spans.
     let padded;
     let input = if let Some(rest) = text.strip_prefix('\u{feff}') {
@@ -98,6 +99,7 @@ fn parse(text: &str, edition: Edition) -> anyhow::Result<SourceFile> {
 
 #[cfg(test)]
 mod tests {
+    use anyhow::Result;
     use ra_ap_syntax::{
         AstNode,
         Edition,
@@ -105,7 +107,7 @@ mod tests {
     };
 
     #[test]
-    fn bom_and_crlf_preserve_original_offsets() -> anyhow::Result<()> {
+    fn bom_and_crlf_preserve_original_offsets() -> Result<()> {
         for newline in ["\n", "\r\n"] {
             let text = format!("\u{feff}// 型別{newline}fn first() {{}}{newline}fn second() {{}}{newline}");
             let parsed = super::parse(&text, Edition::Edition2024)?;

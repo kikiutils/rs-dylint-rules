@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use super::support;
 
 #[test]
-fn standalone_imports_preserve_the_resolved_local_module_route() -> anyhow::Result<()> {
+fn standalone_imports_preserve_the_resolved_local_module_route() -> Result<()> {
     let source = r#"use anyhow::Result;
 mod errors { pub use anyhow::Context; }
 use errors::{Context};
@@ -23,7 +25,7 @@ pub fn run() -> Result<()> {
 }
 
 #[test]
-fn imports_a_multiline_raw_function_path_without_a_redundant_alias() -> anyhow::Result<()> {
+fn imports_a_multiline_raw_function_path_without_a_redundant_alias() -> Result<()> {
     let source = r"use std::time::Duration;
 pub async fn run() {
     tokio ::
@@ -47,7 +49,7 @@ pub async fn run() {
 }
 
 #[test]
-fn diagnoses_redundant_extern_crate_aliases_used_by_managed_apis() -> anyhow::Result<()> {
+fn diagnoses_redundant_extern_crate_aliases_used_by_managed_apis() -> Result<()> {
     support::diagnosed(
         r#"extern crate anyhow as anyhow;
 pub fn error() -> anyhow::Error { anyhow::Error::msg("example") }
@@ -57,7 +59,7 @@ pub fn error() -> anyhow::Error { anyhow::Error::msg("example") }
 }
 
 #[test]
-fn accepts_extern_crate_aliases_used_only_by_unmanaged_apis() -> anyhow::Result<()> {
+fn accepts_extern_crate_aliases_used_only_by_unmanaged_apis() -> Result<()> {
     support::accepted(
         r#"extern crate std as standard;
 pub fn command() -> standard::process::Command { standard::process::Command::new("example") }

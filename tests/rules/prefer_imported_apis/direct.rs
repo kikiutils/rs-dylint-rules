@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use super::support;
 
 #[test]
-fn imports_qualified_anyhow_macro_and_context_trait() -> anyhow::Result<()> {
+fn imports_qualified_anyhow_macro_and_context_trait() -> Result<()> {
     let source = r#"use anyhow::Result;
 pub fn check(valid: bool) -> Result<String> {
     anyhow::ensure!(valid, "invalid");
@@ -25,7 +27,7 @@ pub fn check(valid: bool) -> Result<String> {
 }
 
 #[test]
-fn imports_anyhow_result_while_preserving_the_error_namespace() -> anyhow::Result<()> {
+fn imports_anyhow_result_while_preserving_the_error_namespace() -> Result<()> {
     let source = r#"pub fn error() -> anyhow::Error { anyhow::anyhow!("error") }
 pub fn result() -> anyhow::Result<()> { Ok(()) }
 "#;
@@ -45,7 +47,7 @@ pub fn result() -> anyhow::Result<()> { Ok(()) }
 }
 
 #[test]
-fn adds_standalone_macro_imports_without_extending_an_existing_group() -> anyhow::Result<()> {
+fn adds_standalone_macro_imports_without_extending_an_existing_group() -> Result<()> {
     let source = r#"use anyhow::{Context, Result, anyhow};
 pub fn check(valid: bool) -> Result<()> {
     anyhow::ensure!(valid, "invalid");
@@ -69,7 +71,7 @@ pub fn check(valid: bool) -> Result<()> {
 }
 
 #[test]
-fn keeps_new_imports_local_when_an_existing_group_is_between_calls() -> anyhow::Result<()> {
+fn keeps_new_imports_local_when_an_existing_group_is_between_calls() -> Result<()> {
     let source = r#"use anyhow::Result;
 pub fn before() -> Result<()> { anyhow::bail!("before") }
 use anyhow::{ensure};
@@ -89,7 +91,7 @@ pub fn after() -> Result<()> { ensure!(true); anyhow::bail!("after") }
 }
 
 #[test]
-fn accepts_context_import_used_only_through_extension_methods() -> anyhow::Result<()> {
+fn accepts_context_import_used_only_through_extension_methods() -> Result<()> {
     support::accepted(
         r#"use anyhow::{Context, Result};
 pub fn read() -> Result<String> {
@@ -101,7 +103,7 @@ pub fn read() -> Result<String> {
 }
 
 #[test]
-fn diagnoses_context_alias_used_only_through_extension_methods() -> anyhow::Result<()> {
+fn diagnoses_context_alias_used_only_through_extension_methods() -> Result<()> {
     support::diagnosed(
         r#"use anyhow::{Context as ErrorContext, Result};
 pub fn read() -> Result<String> {
@@ -113,7 +115,7 @@ pub fn read() -> Result<String> {
 }
 
 #[test]
-fn diagnoses_renamed_anyhow_macros() -> anyhow::Result<()> {
+fn diagnoses_renamed_anyhow_macros() -> Result<()> {
     support::diagnosed(
         r#"use anyhow::{bail as fail, Result};
 pub fn run() -> Result<()> { fail!("example") }
@@ -123,7 +125,7 @@ pub fn run() -> Result<()> { fail!("example") }
 }
 
 #[test]
-fn leaves_macro_generated_paths_untouched() -> anyhow::Result<()> {
+fn leaves_macro_generated_paths_untouched() -> Result<()> {
     support::accepted(
         r#"macro_rules! error { () => { anyhow::anyhow!("generated") }; }
 pub fn generated() -> anyhow::Error { error!() }

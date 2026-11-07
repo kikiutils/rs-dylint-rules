@@ -1,3 +1,5 @@
+use anyhow::Result;
+
 mod support;
 
 const SOURCE: &str = r#"pub mod nested {
@@ -10,7 +12,7 @@ const SOURCE: &str = r#"pub mod nested {
 
 // All rules share one lint pass; enabling them together must not change any rule's output.
 #[test]
-fn inline_module_diagnostics_match_when_rules_are_enabled_together() -> anyhow::Result<()> {
+fn inline_module_diagnostics_match_when_rules_are_enabled_together() -> Result<()> {
     let directory = support::fixture(SOURCE)?;
     support::anyhow(&directory)?;
     let combined = support::run_lints(&directory, false, support::LINTS)?;
@@ -39,7 +41,7 @@ fn inline_module_diagnostics_match_when_rules_are_enabled_together() -> anyhow::
 }
 
 #[test]
-fn combined_fixes_converge_and_are_idempotent() -> anyhow::Result<()> {
+fn combined_fixes_converge_and_are_idempotent() -> Result<()> {
     let directory = support::fixture(SOURCE)?;
     support::anyhow(&directory)?;
     let output = support::run_lints(&directory, true, support::LINTS)?;

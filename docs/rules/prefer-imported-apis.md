@@ -167,7 +167,7 @@ fn fail() -> anyhow::Result<()> { // 應先 use anyhow::Result，再使用 Resul
 - 優先重用可見、位於上方、名稱合規且無條件 attributes 的 binding；否則只在最近可合法插入的作用域開頭新增獨立 import，不跨越使用點的 cfg 邊界提升。不合併或整理既有 imports，排版交由使用者的 rustfmt。
 - 同作用域的新 imports 統一規劃、相同 binding 不重複新增；新的 binding 與所有依賴它的替換同屬一份 multipart suggestion。內層重用計畫中的外層 import 時仍驗證遮蔽。
 - 依解析後的名稱空間、作用域、泛型參數、bindings、references 與展開產物檢查名稱捕獲；包含 module namespace，不只檢查 leaf 名稱。module 有 glob 使用端時，不新增可能改變其 bindings 的 import；重用既有 binding 仍須安全。
-- 保留註解、attributes、泛型與存取語意；不將 import 插入前導註解與 item 之間。新增 import 置於 inner attributes／inner docs 之後，不拆開文件歸屬，也不任意改走其他 re-export 路徑。
+- 保留註解、attributes、泛型與存取語意；不將 import 插入前導註解與 item 之間。新增 import 置於 inner attributes／inner docs 之後、第一個 item／statement 及其附屬註解之前；檔頭 banner 與 inner attributes 內的註解不阻擋新增 import。此機制共用於所有 API 家族，不拆開文件歸屬，也不任意改走其他 re-export 路徑。
 - 可逐一將裸名稱或 leaf alias 的使用點改為指定 namespace，例如 `id()` → `process::id()`、`IoError::other(...)` → `io::Error::other(...)`，仍須通過相同名稱解析與 cfg 安全檢查。
 - 能對回原文的巨集參數使用點沿用相同修正流程，例如 `path!(current_dir().ok()?)` → `path!(env::current_dir().ok()?)`；新增 import 仍在原始程式碼作用域內，不插入巨集 token tree。
 - 同一原文被巨集重複使用時，須確認各展開位置的原始解析身分與名稱安全性；無法同時保留所有使用點語意時僅診斷。

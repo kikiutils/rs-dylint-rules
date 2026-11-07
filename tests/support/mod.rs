@@ -6,6 +6,7 @@ use std::process::{
     Output,
 };
 
+use anyhow::Result;
 use pathkit::{
     SyncFsOps,
     path,
@@ -23,12 +24,12 @@ pub(crate) const LINTS: &[&str] = &[
 // Pinned so fixture builds stay reproducible.
 pub(crate) const ANYHOW_VERSION: &str = "=1.0.104";
 
-pub(crate) fn fixture(source: &str) -> anyhow::Result<TempDir> {
+pub(crate) fn fixture(source: &str) -> Result<TempDir> {
     fixture_with(source, &[])
 }
 
 // Creates a fixture crate with `src/lib.rs` plus extra files relative to the crate root.
-pub(crate) fn fixture_with(source: &str, files: &[(&str, &str)]) -> anyhow::Result<TempDir> {
+pub(crate) fn fixture_with(source: &str, files: &[(&str, &str)]) -> Result<TempDir> {
     let directory = tempfile::tempdir()?;
     write(
         &directory,
@@ -57,7 +58,7 @@ pub(crate) fn cargo(directory: &TempDir) -> Command {
     command
 }
 
-pub(crate) fn behavior(directory: &TempDir) -> anyhow::Result<()> {
+pub(crate) fn behavior(directory: &TempDir) -> Result<()> {
     let output = cargo(directory)
         .args(["test", "--lib", "--message-format=short", "--quiet"])
         .output()?;
@@ -66,20 +67,15 @@ pub(crate) fn behavior(directory: &TempDir) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> anyhow::Result<Output> {
+pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> Result<Output> {
     run_lints(directory, fix, &[lint])
 }
 
-pub(crate) fn run_lints(directory: &TempDir, fix: bool, lints: &[&str]) -> anyhow::Result<Output> {
+pub(crate) fn run_lints(directory: &TempDir, fix: bool, lints: &[&str]) -> Result<Output> {
     run_with_args(directory, fix, lints, &["--lib"])
 }
 
-pub(crate) fn run_with_args(
-    directory: &TempDir,
-    fix: bool,
-    lints: &[&str],
-    targets: &[&str],
-) -> anyhow::Result<Output> {
+pub(crate) fn run_with_args(directory: &TempDir, fix: bool, lints: &[&str], targets: &[&str]) -> Result<Output> {
     let mut command = cargo(directory);
     // Allow every kiki lint, then warn only the requested ones.
     let flags = std::iter::once("-A unused".to_owned())
@@ -130,15 +126,15 @@ pub(crate) fn has_lint(output: &Output, lint: &str) -> bool {
     !diagnostics(output, lint).is_empty()
 }
 
-pub(crate) fn source(directory: &TempDir) -> anyhow::Result<String> {
+pub(crate) fn source(directory: &TempDir) -> Result<String> {
     read(directory, "src/lib.rs")
 }
 
-pub(crate) fn read(directory: &TempDir, relative: &str) -> anyhow::Result<String> {
+pub(crate) fn read(directory: &TempDir, relative: &str) -> Result<String> {
     Ok((path!(directory.path()) / relative).read_to_string_sync()?)
 }
 
-pub(crate) fn write(directory: &TempDir, relative: &str, content: &str) -> anyhow::Result<()> {
+pub(crate) fn write(directory: &TempDir, relative: &str, content: &str) -> Result<()> {
     let file = path!(directory.path()) / relative;
     if let Some(parent) = file.parent() {
         parent.create_dir_all_sync()?;
@@ -149,15 +145,15 @@ pub(crate) fn write(directory: &TempDir, relative: &str, content: &str) -> anyho
 }
 
 // Appends raw TOML sections to the fixture manifest.
-pub(crate) fn manifest(directory: &TempDir, toml: &str) -> anyhow::Result<()> {
+pub(crate) fn manifest(directory: &TempDir, toml: &str) -> Result<()> {
     let manifest = read(directory, "Cargo.toml")?;
     write(directory, "Cargo.toml", &format!("{manifest}\n{toml}\n"))
 }
 
-pub(crate) fn dependency(directory: &TempDir, entries: &str) -> anyhow::Result<()> {
+pub(crate) fn dependency(directory: &TempDir, entries: &str) -> Result<()> {
     manifest(directory, &format!("[dependencies]\n{entries}"))
 }
 
-pub(crate) fn anyhow(directory: &TempDir) -> anyhow::Result<()> {
+pub(crate) fn anyhow(directory: &TempDir) -> Result<()> {
     dependency(directory, &format!("anyhow=\"{ANYHOW_VERSION}\""))
 }

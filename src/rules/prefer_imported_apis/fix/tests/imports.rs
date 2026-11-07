@@ -33,17 +33,64 @@ fn file_imports_follow_inner_attributes_and_docs() {
 
 #[test]
 fn outer_docs_stay_with_their_item() {
-    let source = "/// function docs\nfn f() {}\n";
-    assert_eq!(insert(source, &parse(source)), Some(format!("use std::io;\n{source}")));
+    for docs in ["/// function docs\n", "/// function docs\n\n", "/** function docs */ "] {
+        let source = format!("#![allow(unused)]\n{docs}fn f() {{}}\n");
+        assert_eq!(
+            insert(&source, &parse(&source)),
+            Some(format!("#![allow(unused)]\nuse std::io;\n{docs}fn f() {{}}\n"))
+        );
+    }
+
+    let source = "#![allow(unused)] /** function docs */ fn f() {}\n";
+    assert_eq!(
+        insert(source, &parse(source)),
+        Some("#![allow(unused)] use std::io;\n/** function docs */ fn f() {}\n".to_owned())
+    );
 }
 
 #[test]
-fn comments_in_the_insertion_preamble_block_edits() {
-    for source in [
-        "// file banner\n\nfn f() {}\n",
-        "#![allow(/* owned comment */ unused)]\nfn f() {}\n",
-    ] {
-        assert!(insert(source, &parse(source)).is_none(), "{source}");
+fn preamble_comments_and_inner_attribute_comments_allow_insertion() {
+    for newline in ["\n", "\r\n"] {
+        for preamble in [
+            format!("// file banner{newline}{newline}"),
+            format!("#![allow(/* owned comment */ unused)]{newline}"),
+            format!("// shared helpers{newline}#![allow(dead_code)]{newline}{newline}"),
+            format!("#![allow(unused)] // attribute comment{newline}"),
+        ] {
+            let source = format!("{preamble}fn f() {{}}{newline}");
+            assert_eq!(
+                insert(&source, &parse(&source)),
+                Some(format!("{preamble}use std::io;{newline}fn f() {{}}{newline}"))
+            );
+        }
+    }
+}
+
+#[test]
+fn leading_comments_stay_with_the_following_item_or_statement() {
+    for newline in ["\n", "\r\n"] {
+        for comment in ["// item comment", "/* item comment */", "/// item docs"] {
+            let source = format!("{comment}{newline}fn f() {{}}{newline}");
+            assert_eq!(
+                insert(&source, &parse(&source)),
+                Some(format!("use std::io;{newline}{source}"))
+            );
+        }
+
+        let source = format!("fn f() {{{newline}    // statement comment{newline}    work();{newline}}}{newline}");
+        let root = parse(&source);
+        let scope = root
+            .descendants()
+            .find_map(ast::StmtList::cast)
+            .unwrap_or_else(|| panic!("missing scope"));
+
+        assert_eq!(
+            insert(&source, scope.syntax()),
+            Some(source.replace(
+                "    // statement",
+                &format!("    use std::io;{newline}    // statement")
+            ))
+        );
     }
 }
 

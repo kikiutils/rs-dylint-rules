@@ -1,7 +1,9 @@
+use anyhow::Result;
+
 use super::support;
 
 #[test]
-fn qualifies_standard_functions_and_core_reexports() -> anyhow::Result<()> {
+fn qualifies_standard_functions_and_core_reexports() -> Result<()> {
     let source = r"pub fn inspect() -> (u32, usize, bool) {
     let mut value = 3;
     let old = std::mem::replace(&mut value, 5);
@@ -33,7 +35,7 @@ fn qualifies_standard_functions_and_core_reexports() -> anyhow::Result<()> {
 }
 
 #[test]
-fn qualifies_error_types_without_restricting_other_types_or_prelude_functions() -> anyhow::Result<()> {
+fn qualifies_error_types_without_restricting_other_types_or_prelude_functions() -> Result<()> {
     let source = r#"use std::result;
 use std::process as proc;
 pub fn result() -> std::io::Result<result::Result<(), std::io::Error>> { Ok(Ok(())) }
@@ -61,7 +63,7 @@ pub fn prelude() {
 }
 
 #[test]
-fn accepts_canonical_standard_paths_and_unmanaged_module_aliases() -> anyhow::Result<()> {
+fn accepts_canonical_standard_paths_and_unmanaged_module_aliases() -> Result<()> {
     support::accepted(
         r#"use std::{io, process, mem};
 use std::process as command_process;
@@ -75,7 +77,7 @@ pub fn command() -> command_process::Command { command_process::Command::new("ex
 }
 
 #[test]
-fn qualifies_bare_functions_and_type_aliases_without_removing_imports() -> anyhow::Result<()> {
+fn qualifies_bare_functions_and_type_aliases_without_removing_imports() -> Result<()> {
     let source = r#"use std::{process::id, io::Error as IoError};
 pub fn current() -> (fn() -> u32, u32) { (id, id()) }
 pub fn error() -> IoError { IoError::other("example") }
