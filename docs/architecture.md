@@ -19,11 +19,13 @@
 | `src/facts.rs` | 依實體路徑分檔保存各規則的 compiler facts，每筆附 module 編號與 HirId。 |
 | `src/syntax.rs` | 共用 attributes 保護、條件邊界、註解與涵蓋節點 helper。 |
 | `src/diagnostic.rs` | 語法層的診斷與 edits，以及共用的 crate 層級 emit。 |
-| `src/rules/*/collect.rs` | 收集 rustc 語意並銜接各規則的分析。`statement_padding` 不需 facts，沒有 collector，其分析入口在 `mod.rs`。 |
-| `src/rules/*/analysis.rs` | 依 CST、原文與 compiler facts 產生診斷及安全 edits。 |
-| `src/rules/prefer_imported_apis/resolution.rs` | 使用 rustc 的 binding、reference、namespace 與 glob 資訊判斷名稱安全性。 |
+| `src/rules/*/collect.rs`／`collect/` | 收集 rustc 語意並銜接各規則的分析。`statement_padding` 不需 facts，沒有 collector，其分析入口在 `mod.rs`。 |
+| `src/rules/*/analysis.rs`／`analysis/` | 依 CST、原文與 compiler facts 產生診斷與修正要求。 |
+| `src/rules/prefer_imported_apis/policy/` | 分檔宣告 API 家族，由公開 exports 建立 DefId 索引，集中直接名稱、指定 namespace 與固定 module alias 政策。 |
+| `src/rules/prefer_imported_apis/names/` | 依 rustc 的 bindings、references、名稱空間、作用域與 glob 使用端判斷新增／重用名稱是否安全。 |
+| `src/rules/prefer_imported_apis/fix/` | 跨使用點規劃共用 imports 與 multipart edits，保留依賴新增 binding 的替換為同一份 suggestion。 |
 | `src/test_support.rs` | analysis 單元測試套用 edits 的 helper。 |
-| `tests/rules/main.rs` | 規則專屬整合測試入口，各規則案例位於同目錄；跨規則與來源情境測試保留於 `tests/`。 |
+| `tests/rules/main.rs` | 規則專屬整合測試入口；`prefer_imported_apis/` 依家族與安全邊界分組，其他規則案例位於同目錄。跨規則與來源情境測試保留於 `tests/`。 |
 | `tests/support/mod.rs` | 整合測試共用 fixture、Cargo 執行及 JSON 診斷判讀；放在子目錄避免被 Cargo 當成獨立測試 target。 |
 
 ## 規則註冊與順序
@@ -66,7 +68,7 @@
 - 僅處理 canonicalize 後位於 compiler 工作目錄內、已登記為 module 原始定義檔的實體來源。不依固定目錄、`.rs` 副檔名或 Git 忽略規則篩選。
 - 獨立 `include!` item／expression 片段不屬於模組原始定義檔，因此略過。compiler facts 另須符合該檔案的 module 歸屬。
 - `statement_padding` 檢查已載入模組檔案的整份 CST，包含其中 cfg 停用的程式碼；不因此載入停用的外部模組檔案。其他四條規則僅根據啟用中的 compiler facts 分析，停用項目不列為 unresolved。
-- rustdoc 程式碼區塊、巨集輸入 token trees 與展開產物不直接當成原始程式碼分析；原始巨集呼叫與 derive 的處理方式見各規則文件。
+- rustdoc 程式碼區塊、巨集輸入 token trees 與展開產物不直接當成一般原始程式碼分析；`prefer_imported_apis` 可依 rustc 已解析且精確對應原始輸入的 facts 處理巨集參數 API 路徑，不自行推斷其他 tokens 的語意。原始巨集呼叫與 derive 的處理方式見各規則文件。
 
 ## 診斷層級
 

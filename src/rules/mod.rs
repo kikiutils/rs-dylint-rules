@@ -68,6 +68,10 @@ impl Collectors {
         self.prefer_imported_apis.check_path(cx, workspace, path, id);
     }
 
+    pub(crate) fn check_pat<'tcx>(&mut self, cx: &LateContext<'tcx>, pattern: &'tcx hir::Pat<'tcx>) {
+        self.prefer_imported_apis.check_pat(cx, pattern);
+    }
+
     pub(crate) fn check_expr<'tcx>(
         &mut self,
         cx: &LateContext<'tcx>,

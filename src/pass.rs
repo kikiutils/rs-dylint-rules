@@ -57,6 +57,10 @@ impl<'tcx> LateLintPass<'tcx> for KikiRules {
         self.collectors.check_path(cx, &mut self.workspace, path, id);
     }
 
+    fn check_pat(&mut self, cx: &LateContext<'tcx>, pattern: &'tcx hir::Pat<'tcx>) {
+        self.collectors.check_pat(cx, pattern);
+    }
+
     fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx hir::Expr<'tcx>) {
         self.collectors.check_expr(cx, &mut self.workspace, expr);
     }

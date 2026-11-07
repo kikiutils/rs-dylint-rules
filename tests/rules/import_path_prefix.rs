@@ -1,4 +1,3 @@
-use anyhow::Result;
 use pathkit::{
     SyncFsOps,
     path,
@@ -7,7 +6,7 @@ use pathkit::{
 use crate::support;
 
 #[test]
-fn fixes_resolved_routes_without_shortcutting_reexports() -> Result<()> {
+fn fixes_resolved_routes_without_shortcutting_reexports() -> anyhow::Result<()> {
     let source = r"use std::fmt;
 mod other { pub struct Other; }
 mod a {
@@ -80,7 +79,7 @@ pub use self::a::c::rr::child as bridge;
 }
 
 #[test]
-fn grouped_paths_and_block_local_bindings_keep_their_meaning() -> Result<()> {
+fn grouped_paths_and_block_local_bindings_keep_their_meaning() -> anyhow::Result<()> {
     let source = r"#![cfg_attr(test, allow(dead_code))]
 mod a {
     pub struct Value;
@@ -127,7 +126,7 @@ mod a {
 }
 
 #[test]
-fn physical_file_names_do_not_determine_module_ancestry() -> Result<()> {
+fn physical_file_names_do_not_determine_module_ancestry() -> anyhow::Result<()> {
     let directory = support::fixture("mod a { pub struct Value; #[path = \"../odd.rs\"] mod nested; }\n")?;
     // rustc resolves #[path] relative to the inline module's directory.
     (path!(directory.path()) / "src" / "a").create_dir_sync()?;
@@ -151,7 +150,7 @@ fn physical_file_names_do_not_determine_module_ancestry() -> Result<()> {
 }
 
 #[test]
-fn imports_of_current_and_ancestor_modules_are_diagnosed_without_direct_fixes() -> Result<()> {
+fn imports_of_current_and_ancestor_modules_are_diagnosed_without_direct_fixes() -> anyhow::Result<()> {
     let source = r"pub mod a {
     use crate::a as Current;
     pub mod b {
@@ -215,7 +214,7 @@ pub use self::a as bridge;
 }
 
 #[test]
-fn split_fixes_local_branches_and_preserves_absolute_external_branches() -> Result<()> {
+fn split_fixes_local_branches_and_preserves_absolute_external_branches() -> anyhow::Result<()> {
     let imports = "use {::std as Standard, crate::a::{Value as Parent, b::Local as Own}, ::std::fmt as Format, ::std::{io::Read as _, option::Option as Maybe}, ::std::cmp::*};";
     let source = format!(
         r#"pub mod a {{
@@ -251,8 +250,7 @@ mod external_only {{ use {{::std::fmt, ::core::cmp}}; }}
             "{output:?}"
         );
 
-        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
-        assert!(behavior.status.success(), "{behavior:?}");
+        support::behavior(&directory)?;
     }
 
     assert_eq!(

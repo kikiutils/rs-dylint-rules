@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use anyhow::{
     Context,
-    Result,
     anyhow,
     ensure,
 };
@@ -24,6 +23,7 @@ use rustc_span::Span;
 pub(crate) struct Source {
     pub(crate) parsed: SourceFile,
     pub(crate) text: String,
+    pub(crate) edition: Edition,
     file: Arc<rustc_span::SourceFile>,
 }
 
@@ -38,7 +38,7 @@ impl Source {
         }
     }
 
-    fn read(cx: &LateContext<'_>, path: &Path, anchor: Span) -> Result<Self> {
+    fn read(cx: &LateContext<'_>, path: &Path, anchor: Span) -> anyhow::Result<Self> {
         let text = path
             .read_to_string_sync()
             .with_context(|| format!("Failed to read {path}"))?;
@@ -61,7 +61,12 @@ impl Source {
         let parsed =
             parse(&text, edition).with_context(|| format!("Cannot parse {path} as a Rust item source file"))?;
 
-        Ok(Self { parsed, text, file })
+        Ok(Self {
+            parsed,
+            text,
+            edition,
+            file,
+        })
     }
 
     pub(crate) fn span(&self, range: TextRange) -> Span {
@@ -76,7 +81,7 @@ fn normalized(text: &str) -> String {
     text.strip_prefix('\u{feff}').unwrap_or(text).replace("\r\n", "\n")
 }
 
-fn parse(text: &str, edition: Edition) -> Result<SourceFile> {
+fn parse(text: &str, edition: Edition) -> anyhow::Result<SourceFile> {
     // Preserve original byte offsets, including BOM and CRLF, for rustc spans.
     let padded;
     let input = if let Some(rest) = text.strip_prefix('\u{feff}') {
@@ -93,7 +98,6 @@ fn parse(text: &str, edition: Edition) -> Result<SourceFile> {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
     use ra_ap_syntax::{
         AstNode,
         Edition,
@@ -101,7 +105,7 @@ mod tests {
     };
 
     #[test]
-    fn bom_and_crlf_preserve_original_offsets() -> Result<()> {
+    fn bom_and_crlf_preserve_original_offsets() -> anyhow::Result<()> {
         for newline in ["\n", "\r\n"] {
             let text = format!("\u{feff}// 型別{newline}fn first() {{}}{newline}fn second() {{}}{newline}");
             let parsed = super::parse(&text, Edition::Edition2024)?;

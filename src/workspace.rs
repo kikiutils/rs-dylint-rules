@@ -4,7 +4,7 @@ use std::{
         BTreeMap,
         BTreeSet,
     },
-    env::current_dir,
+    env,
     sync::Arc,
 };
 
@@ -94,7 +94,7 @@ impl Workspace {
         let file = Self::file(cx, span)?;
         let root = self
             .root
-            .get_or_init(|| path!(current_dir().ok()?).canonicalize_sync().ok());
+            .get_or_init(|| path!(env::current_dir().ok()?).canonicalize_sync().ok());
 
         let path = self
             .paths

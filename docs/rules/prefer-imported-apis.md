@@ -4,127 +4,182 @@
 
 ## 目的
 
-指定 API 必須先匯入再使用，並統一可用的名稱與 aliases。目前涵蓋 anyhow；之後可逐項擴充其他 crate 的政策。
+讓指定 API 在各 repositories 使用固定且能辨認來源的形式：一般指定項目直接匯入，來源語意不可省略者保留 namespace，容易混淆的實作使用固定 module alias。這是本 repo 的風格政策，不是 Rust 語意要求，也不追求所有 API 都有相同的路徑段數。
 
 ## 適用範圍
 
-- 檢查 anyhow crate 本身及下列指定 API 的 imports（所有可見性），以及 imports 以外的型別、運算式與巨集呼叫路徑。
-- 遵守[共用分析範圍](../architecture.md#分析範圍)，涵蓋各層 module、函式、方法、closure、async block、控制流程與其他巢狀區塊。
-- 依 rustc 實際解析結果辨識來源，不只比對 `anyhow` 字樣；其他 crate 的同名項目不受影響。
+- 檢查下列 API 與 namespace 的 imports（所有可見性），以及 imports 以外的型別、運算式、關聯項目與原始巨集呼叫路徑。
+- 遵守[共用分析範圍](../architecture.md#分析範圍)，涵蓋檔案頂層、各層 module、函式、方法、closure、async block 與其他巢狀區塊；依啟用中的 compiler facts 分析，不檢查 cfg 停用項目。
+- 以 rustc 實際解析結果辨識 API；crate 別名、依賴改名與 re-export 不改變其身分，其他來源的同名項目不受影響。巨集參數內僅處理 rustc 已解析、且能精確對應原始輸入範圍的 API 路徑，不自行猜測其他 token trees 的語意。
+- 只限制明列的 API／家族，不將自由函式政策外推至同 module 的型別、traits、方法或巨集。
 
 ## 規則
 
-### 指定 API 先匯入再使用
+家族清單指定檢查範圍，範例不是完整成員表；API 依公開項目的解析身分辨識，不依 `from_*`／`to_*` 等文字模式猜測。
 
-禁止在使用點以限定路徑直接存取以下 API，包含 crate 別名或其他可解析至相同 API 的限定路徑：
+### 使用形式與匯入位置
 
-| API | 允許的匯入名稱 |
+| 政策 | 要求 |
 | --- | --- |
-| `anyhow::anyhow!` | `anyhow` |
-| `anyhow::bail!` | `bail` |
-| `anyhow::ensure!` | `ensure` |
-| `anyhow::Result` | `Result` 或 `AnyhowResult` |
-| `anyhow::Error` | 必須為 `AnyhowError` |
+| 直接匯入 | 必須先匯入指定項目，再使用原名；禁止使用點的限定路徑及任意 alias。 |
+| 指定 namespace | 必須保留表列的 namespace，不得將成員直接匯入為裸名稱或型別 alias。 |
+| 固定 module alias | 必須以指定名稱匯入 module，成員仍保留該 namespace；即使只使用一種實作也不省略 alias。 |
 
-使用前須在可見的上方 imports 區域匯入對應 API；只匯入實際需要的項目，不補齊整份清單。`Error` 的型別標註、關聯函式與其他使用方式均適用，不限於呼叫語法。
+- 需要的 import 必須在使用點上方且可見，不要求全部提升至檔案頂層，也不補齊未使用的項目。crate root 已可由 extern prelude 使用時，不要求冗餘的 `use anyhow;`、`use serde_json;` 或 `use toml;`。
+- 指定形式同時適用於型別標註、泛型、關聯項目存取與非呼叫用法，不限於 `fn()` 語法；不以有無 `.await` 判斷 API 來源。
+- 使用點須採表列的完整形式，而不是只要包含該 namespace 即可。例如 `std::process::id()`、`std::io::Error` 須改為 `process::id()`、`io::Error`；`confique::toml::template` 則保留表列的來源與格式前綴。此要求只作用於受管 API，不限制 `tokio::process::Command` 等未列項目。
+- 受管 API 禁止任意改名，包括使用點 namespace 的任意 alias 與冗餘的同名 `as`；固定 module alias 是明列的允許形式。module alias 若只用於未受管項目（例如 `use std::process as proc; proc::Command::new(...)`），不受此限制；透過該 alias 使用受管 API（例如 `proc::id()`）則仍違規。
+- imports 內可書寫來源路徑，但建立的 binding 仍須符合政策。規則同樣檢查公開 re-export；不因 `pub use` 放行。glob 若引入違規 binding 仍須診斷，但不全面禁止其他 glob；經解析確認的合規 binding 仍須符合上方位置要求。
+- 本規則不修改 Cargo manifest。若依賴改名或名稱衝突使規定形式無法安全引入，仍診斷，不自行選擇其他名稱。
 
-### 限制 aliases
+### 直接匯入
 
-- 禁止替 anyhow crate 本身設定 alias，例如 `use anyhow as ah;` 或 `extern crate anyhow as ah;`；不禁止未設定 alias 的 `use anyhow;`。Cargo.toml 中的依賴改名不由本規則限制，但改名後的 API 使用仍依真實來源檢查。
-- 上表 API 中，僅 `Result`、`Error` 允許設定 alias，且分別只能為 `AnyhowResult`、`AnyhowError`。
-- `Result` 可以不設定 alias；`Error` 必須設定 alias，不允許直接以 `Error` 匯入或使用。
-- `anyhow`、`bail`、`ensure` 巨集不得設定 alias；冗餘的 `bail as bail` 與 `Result as Result` 同樣不允許。
-- 若來源已以合規名稱重新匯出，可直接匯入該名稱，不要求再補上同名 `as`。
-- glob 若隱式匯入了上述 API 的不合規名稱（例如 `anyhow::*` 中的 `Error`），仍須診斷，改用符合命名政策的明確 imports；不因此全面禁止其他 glob imports。
-- 經 rustc 確認、名稱合規的 glob bindings 同樣參與「匯入須位於使用點上方」檢查；不要求將這些 glob 展開。
-- 上述命名限制同樣適用於各種可見性的重新匯出；不因使用 `pub use` 而放行。
-- 尚未列入清單的 anyhow API 不新增限制；不把目前政策外推至所有 crate。
+| API／家族 | 指定名稱／使用例 |
+| --- | --- |
+| `anyhow::Context` | `use anyhow::Context;`，使用 `Context` 或其 trait 方法 |
+| anyhow bang macros | `use anyhow::{anyhow, bail, ensure};`，使用 `anyhow!()`、`bail!()`、`ensure!()` |
+| `tokio::time` 自由函式 | `sleep()`、`sleep_until()`、`timeout()`、`timeout_at()`、`interval()`、`interval_at()`；其餘自由函式依同一直接匯入政策，不強制 `tokio_time::` |
+
+`a::bail!()` 即使經 alias 或 re-export 解析至 anyhow，仍須改為直接匯入後的 `bail!()`。其他未列入的巨集不套用此政策。
+
+### 標準庫 namespace
+
+| API／家族 | 統一形式 |
+| --- | --- |
+| `std::process` 自由函式 | `process::id()`、`process::exit()`、`process::abort()` |
+| `std::env` 自由函式 | `env::var()`、`env::args_os()`、`env::current_dir()` |
+| `std::mem` 非 prelude 自由函式 | `mem::take()`、`mem::replace()`、`mem::swap()`、`mem::zeroed()` |
+| `std::ptr` 自由函式 | `ptr::null()`、`ptr::null_mut()`、`ptr::read()` |
+| `std::thread` 自由函式 | `thread::spawn()`、`thread::sleep()`、`thread::available_parallelism()` |
+| `std::io` 自由函式 | `io::stdin()`、`io::stdout()`、`io::stderr()`、`io::copy()` |
+| `std::io::{Error, ErrorKind, Result}` | `io::Error`、`io::ErrorKind`、`io::Result<T>`，不使用 `IoError` 等 aliases |
+| `std::fmt::{Error, Result}` | `fmt::Error`、`fmt::Result`，不使用 `FmtError`／`FmtResult` |
+
+`Command`、`Display`、`Formatter` 等未列型別不受限制。標準庫 re-export 自 core 的 API 依實際身分辨識，不因 DefId 位於 core 而漏查。
+
+### 指定 crate namespace
+
+| API／家族 | 統一形式 |
+| --- | --- |
+| `anyhow::{Error, Result}` | `anyhow::Error`、`anyhow::Result<T>`；不使用裸 `Error`／`Result` 或 `AnyhowError`／`AnyhowResult` |
+| `rusqlite::Error` | `rusqlite::Error`；不直接匯入為裸 `Error`，也不使用 `SqliteError`／`RusqliteError` 等 aliases；不連帶限制 `Result`、`Connection` 等未列 API |
+| `anstream::{stdout, stderr}` 自由函式 | `anstream::stdout()`、`anstream::stderr()`；不直接匯入為 `stdout`／`stderr`，以區分 `std::io` 的同名函式 |
+| `serde_json` 序列化／反序列化與值轉換函式 | `serde_json::from_str()`、`serde_json::from_slice()`、`serde_json::from_value()`、`serde_json::to_string()`、`serde_json::to_vec()`、`serde_json::to_value()` 等 |
+| `toml` 序列化／反序列化函式 | `toml::from_str()`、`toml::to_string()`、`toml::to_string_pretty()` 等 |
+| `confique::toml::{template, FormatOptions}` | `confique::toml::template::<T>()`、`confique::toml::FormatOptions`；保留來源與格式 namespace |
+| `confique::yaml::{template, FormatOptions}` | `confique::yaml::template::<T>()`、`confique::yaml::FormatOptions`；保留來源與格式 namespace |
+| `confique::json5::{template, FormatOptions}` | `confique::json5::template::<T>()`、`confique::json5::FormatOptions`；保留來源與格式 namespace |
+| `rmp_serde` 序列化／反序列化函式 | `rmp_serde::from_slice()`、`rmp_serde::to_vec()`、`rmp_serde::to_vec_named()` 等 |
+| `postcard` 序列化／反序列化函式 | `postcard::from_bytes()`、`postcard::to_allocvec()` 等 |
+| `ciborium` 序列化／反序列化函式 | `ciborium::from_reader()`、`ciborium::into_writer()` |
+| `hex` 編解碼函式 | `hex::encode()`、`hex::decode()`、`hex::decode_to_slice()` 等 |
+| `serde_json::{Value, Map, Error, Result}` | `serde_json::Value`、`serde_json::Map`、`serde_json::Error`、`serde_json::Result<T>`；不使用裸名稱或 `JsonValue` 等 aliases |
+| `toml::{Value, Table}` | `toml::Value`、`toml::Table`，不使用裸名稱或另造 aliases |
+
+上述限制只針對相應 API 身分，不影響 prelude 的 `Result<T, E>`。`Serialize`、`Deserialize`、`DeserializeOwned`、`ToHex` 等 traits 不因轉換函式政策而要求限定路徑。
+
+anstream 此項只涵蓋 `stdout`／`stderr` 函式，不連帶限制同名型別或輸出巨集；公開 API 見 [anstream 文件](https://docs.rs/anstream/latest/anstream/)。使用 crate namespace 不要求額外的 `use anstream;`。
+
+confique 保留完整的 `confique::<格式>::` 前綴，不直接匯入 `template`／`FormatOptions`，也不將格式 module 匯入為 `toml`、`yaml`、`json5` 或另設 alias，以區分同名格式 crates。此項只涵蓋表列函式與型別（含其關聯項目存取），不限制 `Config`／`Layer` traits 或其他未列 API；格式 features 見 [confique 文件](https://docs.rs/confique/0.4.0/confique/#cargo-features)。
+
+### Tokio task 與 Channel 的固定 module aliases
+
+| 來源／範圍 | 固定匯入 | 統一使用例 |
+| --- | --- | --- |
+| `tokio::task` 自由函式 | `use tokio::task as tokio_task;` | `tokio_task::spawn()`、`tokio_task::spawn_blocking()`、`tokio_task::yield_now()`、`tokio_task::id()` |
+| `std::sync::mpsc` 自由函式與型別 | `use std::sync::mpsc as std_mpsc;` | `std_mpsc::channel()`、`std_mpsc::Sender<T>`、`std_mpsc::SyncSender<T>`、`std_mpsc::RecvError` |
+| `tokio::sync::mpsc` 自由函式與型別，含 error 子 module | `use tokio::sync::mpsc as tokio_mpsc;` | `tokio_mpsc::channel()`、`tokio_mpsc::UnboundedReceiver<T>`、`tokio_mpsc::error::TryRecvError` |
+| `tokio::sync::oneshot` 自由函式與型別，含 error 子 module | `use tokio::sync::oneshot as tokio_oneshot;` | `tokio_oneshot::channel()`、`tokio_oneshot::Sender<T>`、`tokio_oneshot::error::RecvError` |
+
+`tokio::spawn` 與 `tokio::task::spawn` 若解析為相同 API，均使用 `tokio_task::spawn`。Channel 不使用裸 `channel()`、`Sender<T>`／`Receiver<T>`，也不另造 `AsyncSender` 等 aliases。此表不限制 `JoinHandle`、`Instant` 或鎖型別的命名。
 
 ### 與其他規則的分工
 
-- 本規則決定指定 API 是否須匯入及允許的匯入名稱。
-- 自身 crate 的 import 路徑前綴交由 `import-path-prefix` 處理，imports 分區交由 `import-module-order` 處理，排版交由 rustfmt 處理。
+本規則只決定指定 API 的使用形式。自身 crate 的 import 前綴交由 `import-path-prefix` 處理，imports 分區交由 `import-module-order` 處理，排版交由 rustfmt 處理。未來的一般匯入粒度規則不得對已由本規則接管的 API 產生相反要求。
 
 ## 正確範例
 
-```rust
-use anyhow::{Error as AnyhowError, Result, anyhow, bail, ensure};
+以下假設已安裝相關 dependencies。
 
-fn check(valid: bool) -> Result<()> {
-    ensure!(valid, "invalid input");
-    let error: AnyhowError = anyhow!("example");
-    bail!(error);
+```rust
+use std::{io, process};
+
+use anyhow::{Context, ensure};
+
+fn parse(text: &str) -> anyhow::Result<serde_json::Value> {
+    ensure!(!text.is_empty(), "設定不可為空");
+    serde_json::from_str(text).context("JSON 格式錯誤")
+}
+
+fn io_error() -> io::Error {
+    io::Error::other(format!("process {} failed", process::id()))
 }
 ```
 
-`Result` 也允許使用固定 alias：
-
 ```rust
-use anyhow::Result as AnyhowResult;
+use std::time::Duration;
 
-fn run() -> AnyhowResult<()> {
-    Ok(())
+use tokio::{sync::mpsc as tokio_mpsc, task as tokio_task, time::sleep};
+
+async fn send_later() {
+    let (sender, mut receiver) = tokio_mpsc::channel::<u8>(1);
+    tokio_task::spawn(async move {
+        sleep(Duration::from_millis(10)).await;
+        let _ = sender.send(1).await;
+    });
+    let _ = receiver.recv().await;
 }
 ```
 
 ## 錯誤範例
 
-```rust
-use anyhow as ah;                  // 禁止 crate alias。
-use anyhow::bail as fail;          // 巨集不得設定 alias。
-use anyhow::Result as AppResult;   // 只能保留 Result 或改為 AnyhowResult。
-use anyhow::Error;                 // 必須改為 Error as AnyhowError。
-use anyhow::Error as OtherError;   // 只能使用 AnyhowError。
+以下各項均違反指定使用形式：
 
-fn run() -> anyhow::Result<()> {   // 必須先匯入 Result 或 AnyhowResult。
-    anyhow::bail!("failed");       // 必須先匯入 bail。
+```rust
+use std::{io::Error as IoError, process::id}; // 應保留 io::Error、process::id。
+use anyhow::{Error as AnyhowError, Result}; // 應使用 anyhow::Error／anyhow::Result。
+use anstream::{stdout, stderr}; // 應直接使用 anstream::stdout()／anstream::stderr()。
+use serde_json::{Value as JsonValue, from_slice}; // 應保留 serde_json:: 前綴。
+use confique::toml::{template, FormatOptions}; // 應保留 confique::toml:: 前綴。
+use tokio::sync::mpsc::{Sender, channel}; // 應匯入 module 為 tokio_mpsc。
+use tokio::task::spawn; // 應使用 tokio_task::spawn。
+
+fn fail() -> anyhow::Result<()> {
+    anyhow::bail!("failed"); // 應先 use anyhow::bail，再使用 bail!。
 }
 ```
 
 ## 政策例外
 
-- imports 內允許書寫來源限定路徑，但仍須遵守 alias 限制。
-- 名稱衝突不是政策上的例外；無法安全修正時仍診斷，由使用者調整。
+- prelude 的 `drop()`、`size_of()`、`size_of_val()`、`align_of()`、`align_of_val()` 不要求加上 `mem::`，不限制其限定／未限定形式。
+- 名稱衝突不是政策例外；無法安全修正時仍診斷，由使用者調整。
 
 ## 實作限制
 
-- 無法可靠解析來源的情況不猜測，也不依文字名稱提供修正。未限定名稱只有在可對應原始 import 時才檢查 import 是否位於上方；不因找不到原始 import 就猜測巨集或其他片段建立的 binding。
-- 不支援自行定義或以 `#[macro_use]` 引入與指定 anyhow 巨集同名的其他巨集，不追蹤其 textual scope 或匯出傳播。
+- 無法可靠解析來源時不猜測。未限定名稱須能對應原始 import 才能檢查上方位置；不猜測由巨集或其他片段建立的 binding。不支援同名其他巨集的 textual scope／`#[macro_use]` 傳播分析。
+- 巨集輸入須能依呼叫端 edition 解析為一般 Rust 運算式，僅依 compiler facts 重讀對應的原文路徑及 attributes，保留原始呼叫所在的作用域；不跨入輸入內的巢狀 module，也不展開巨集、不掃描巨集定義本體，或根據 `stringify!` 等未執行輸入中的文字推斷 API。
 
 ## Auto-fix
 
-- 優先重用使用點已可見、位於上方、名稱合規且不帶條件 attributes 的 import；巨集缺少 import 時，優先併入同一 module 上方、同一路徑且無 attributes／註解的既有私有分組 import；其他情況在最近可合法加入 `use` 的作用域開頭新增必要的 imports。函式內的使用點可新增函式內 import，不強制提升至 module。
-- 上述重用也包含合規的 glob bindings；仍檢查名稱遮蔽與條件 attributes，不新增或展開 glob。
-- 同一輪已規劃新增的外層 import，只有在其可見範圍內且位於使用點上方時才可重用，避免在內層重複新增；新的 binding 與依賴它的替換合併為同一份 multipart suggestion，內層仍須通過名稱衝突檢查。
-- 不跨越使用點與所在 module 之間的 `cfg` 邊界提升巨集 import；條件函式或 block 內缺少巨集 import 時，於該條件作用域內新增。module 自身的 `cfg` 同時涵蓋其 imports 與內容，不阻擋 module 內合併。
-- 缺少 `Result` import 時，預設使用 `Result`；若有名稱衝突則僅診斷，不自行改選 alias。已存在的 `AnyhowResult` 可重用；`Error` 一律使用 `AnyhowError`。
-- 只新增實際需要的 imports 並替換相關使用點，不自動匯入全部 API。
-- 已使用短名稱但對應 import 位於下方時，僅診斷，不搬動既有 imports。
-- 違規 aliases、公開重新匯出與含有不合規名稱的 glob 目前僅診斷，不自動重新命名或展開，避免漏改其他檔案、巨集及對外 API。
-- 若原限定路徑使用了重新匯出的別名，且新增 import 需要引入被禁止的 alias，僅診斷；已有可重用的合法 import 時仍可替換使用點。
-- 替換範圍有註解、使用點或外層帶有共用安全清單以外的 attributes，或新增檔案頂層 import 會插到既有前置註解與 item 之間時，僅診斷。
-- 新增 import 會置於作用域的 inner attributes 與 inner doc comments（`//!`、`/*! ... */`）之後，不改變文件歸屬；普通前置註解的既有屏障仍保留。
-- 依 rustc 已解析的名稱空間、作用域、imports、型別參數與巨集展開產物檢查衝突；其他作用域的同名項目、不同名稱空間的 binding，以及無關的 derives／巨集呼叫不直接阻擋修正。
-- 檢查新增 import 是否捕獲原有型別路徑；無法確認安全時僅診斷。修正只替換已解析的 API 路徑並新增必要 imports。
-- module 被其他作用域以 glob 匯入時，不在該 module 新增或補入 import，避免改變 glob 使用端的名稱解析；單純含有子模組不阻擋修正。重用既有 import 不受此限制。
-- 依實際插入作用域或目標 use tree 合併修正，同一 module 的同一巨集 API 只新增一個 binding，不把不同來源的 imports 混入同一分組。
+沿用[共用自動修正機制](../architecture.md#自動修正)與[安全邊界](../architecture.md#安全邊界)：
+
+- 優先重用可見、位於上方、名稱合規且無條件 attributes 的 binding；否則只在最近可合法插入的作用域開頭新增獨立 import，不跨越使用點的 cfg 邊界提升。不合併或整理既有 imports，排版交由使用者的 rustfmt。
+- 同作用域的新 imports 統一規劃、相同 binding 不重複新增；新的 binding 與所有依賴它的替換同屬一份 multipart suggestion。內層重用計畫中的外層 import 時仍驗證遮蔽。
+- 依解析後的名稱空間、作用域、泛型參數、bindings、references 與展開產物檢查名稱捕獲；包含 module namespace，不只檢查 leaf 名稱。module 有 glob 使用端時，不新增可能改變其 bindings 的 import；重用既有 binding 仍須安全。
+- 保留註解、attributes、泛型與存取語意；不將 import 插入前導註解與 item 之間。新增 import 置於 inner attributes／inner docs 之後，不拆開文件歸屬，也不任意改走其他 re-export 路徑。
+- 可逐一將裸名稱或 leaf alias 的使用點改為指定 namespace，例如 `id()` → `process::id()`、`IoError::other(...)` → `io::Error::other(...)`，仍須通過相同名稱解析與 cfg 安全檢查。
+- 能對回原文的巨集參數使用點沿用相同修正流程，例如 `path!(current_dir().ok()?)` → `path!(env::current_dir().ok()?)`；新增 import 仍在原始程式碼作用域內，不插入巨集 token tree。
+- 同一原文被巨集重複使用時，須確認各展開位置的原始解析身分與名稱安全性；無法同時保留所有使用點語意時僅診斷。
+- 既有 `use`／公開 re-export 宣告不改寫、不搬移、不移除，也不展開 glob；即使改寫使用點後原 import 已無用途仍保留。因此修正後可能仍有原 import 的違規診斷或 `unused_imports`，需另行清理；啟用 `deny(unused_imports)`／`deny(warnings)` 時亦可能因此無法通過編譯。已使用合規名稱但 import 位於下方時同樣僅診斷；無法確認安全的使用點不提供修正。
 
 ## 驗證與安全性依據
 
-已在 `nightly-2026-11-01` 與 anyhow `1.0.104` 驗證；未鎖定使用端的 anyhow 版本，若未來版本改變定義結構，須重新查核。
+- 固定工具鏈見 [`rust-toolchain.toml`](../../rust-toolchain.toml)。單元測試依政策、分析與 import edits 分組於 [`policy/tests.rs`](../../src/rules/prefer_imported_apis/policy/tests.rs)、[`analysis/tests/`](../../src/rules/prefer_imported_apis/analysis/tests/mod.rs) 與 [`fix/tests/imports.rs`](../../src/rules/prefer_imported_apis/fix/tests/imports.rs)；整合測試依 API 家族與安全邊界分組於 [`tests/rules/prefer_imported_apis/`](../../tests/rules/prefer_imported_apis/mod.rs)。測試檔案的存在不等同於特定 compiler／依賴版本已通過驗證。
+- 已在 Linux host、`nightly-2026-10-15` 驗證單元、規則整合、跨規則與來源情境測試。家族 fixtures 使用 anyhow `1.0.104`、Tokio `1.54.1`、anstream `1.0.0`、serde_json `1.0.154`、toml `1.2.1`、rmp-serde `1.3.1`、postcard `1.1.3`、ciborium `0.2.2`、hex `0.4.3` 與 confique `0.4.0`（TOML／YAML／JSON5）；另以 rusqlite `0.41.1`（bundled）驗證 Error 政策。不因此宣稱其他平台、版本或所有 feature 組合皆已驗證。
+- 政策參考：標準庫 [prelude](https://doc.rust-lang.org/std/prelude/v1/index.html)、[io::Result](https://doc.rust-lang.org/std/io/type.Result.html)，以及 Tokio [time](https://docs.rs/tokio/latest/tokio/time/)／[task](https://docs.rs/tokio/latest/tokio/task/)。這些文件用於核對 API 與慣例，不代表本專案的固定 alias 或所有改寫已獲安全驗證。
+- 修正的驗證項目包括修正前後編譯／行為、完整修正原文比對與再次 lint 的冪等性；不將個別案例外推為所有 API 均可安全改寫。升級 compiler 或依賴時須重新查核解析身分與修正結果。
 
 ## 未決事項或後續規劃
 
-- 違規 aliases 的跨使用點重新命名與 glob 展開，目前僅診斷，尚未提供修正。
-
-### 擴充更多 API 時的架構方向
-
-以下是下一個 crate 或新類型 API 真正加入時的改寫方向，尚未建立通用框架。目前只有 anyhow 政策；不能只新增一個 `Api` variant，就假設來源辨識、名稱衝突及 auto-fix 均已支援。
-
-- **先集中政策，再擴充清單。** 將 namespace／巨集分類、預設名稱、允許的 aliases、import 命名限制及能否新增 alias，收斂到 `Api` 的方法或小型政策資料。避免在 collector、analysis 與 resolution 各處繼續補 `Api::X` 特例；enum 加少量方法即可，不先建立 trait hierarchy、plugin registry 或新增依賴。
-- **衝突候選名稱使用同一份政策。** `resolution::candidate()` 目前另列 anyhow 的名稱；擴充時應由上述政策導出所有允許的名稱及 namespace，避免忘記同步後漏收 bindings／references，誤認新名稱沒有衝突。
-- **來源身分與顯示名稱分開。** `api()` 目前只識別 anyhow，非巨集 API 只接受 crate root 下的定義。支援其他 crate 或子 module API 時，按實際 DefId 的來源與定義路徑擴充匹配；不同 crate 的同名 API 仍保有不同身分。診斷中的 crate／API 名稱也應由政策提供，不在修正流程硬寫 anyhow。
-- **保留可共用的 edit 機制。** `PlannedImport`、`import_edit()` 與 `import_offset()` 繼續處理作用域、上方位置、插入／合併及 multipart suggestion，不負責猜測特定 crate 的命名政策。新的 binding 與依賴它的替換仍須同屬一份 fix；既有 import 與計畫中的 import 均須位於使用點上方。
-- **新的 namespace 另行驗證。** 目前修正涵蓋型別與 bang macros；函式、值、unit／tuple constructors 等 ValueNS 用法不是單純加入清單。須補齊相應的 binding／reference 收集、遮蔽及名稱捕獲檢查，並以實際使用案例驗證。
-
-擴充時沿用完整修正原文比對、修正前後編譯／行為測試及再次 lint 的冪等性驗證；保留 cfg、glob、註解與 inner docs 的既有邊界。不為尚未使用的 API 或假設性組合提前建立框架，也不因新增 API 就複製一套 fix 流程。
+- 待決策：若擴充 `std::fs`／`tokio::fs` 政策，需先釐清與 `prefer-pathkit` 的分工。
+- 其他候選依實際需求再評估：future／iter／slice／str、rand、tempfile、base64、zstd 的額外政策；broadcast／watch、鎖／JoinHandle／Instant 的固定命名，以及其他格式 crates。不外推至所有第三方函式或巨集。

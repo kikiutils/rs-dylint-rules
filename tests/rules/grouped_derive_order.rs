@@ -1,9 +1,7 @@
-use anyhow::Result;
-
 use crate::support;
 
 #[test]
-fn fixes_builtin_lists_independently_and_resolves_aliases() -> Result<()> {
+fn fixes_builtin_lists_independently_and_resolves_aliases() -> anyhow::Result<()> {
     let source = "use core::fmt::Debug as FormatDebug;\n#[derive(Copy, Clone)]\n#[derive(Hash, Eq, PartialEq, FormatDebug)]\npub struct Value(u32);\nfn nested() {\n    #[derive(Eq, PartialEq, Debug)]\n    struct Nested;\n}\n";
     let directory = support::fixture(source)?;
     let output = support::run(&directory, false, "kiki_grouped_derive_order")?;
@@ -23,14 +21,13 @@ fn fixes_builtin_lists_independently_and_resolves_aliases() -> Result<()> {
 }
 
 #[test]
-fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> Result<()> {
+fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> anyhow::Result<()> {
     let source = "const LABEL: &str = \"型別\";\r\n#[derive(Hash, Ord, Eq, Copy, PartialOrd, Default, Clone, Debug, PartialEq)]\r\npub struct Value(u32);\r\n#[test] fn behavior() { let value = Value::default(); assert_eq!(value, value.clone()); assert!(value < Value(1)); assert_eq!(format!(\"{value:?}\"), \"Value(0)\"); use std::hash::Hash; let mut hasher = std::collections::hash_map::DefaultHasher::new(); value.hash(&mut hasher); }\r\n";
     let directory = support::fixture(source)?;
     for fix in [false, true] {
         let output = support::run(&directory, fix, "kiki_grouped_derive_order")?;
         assert!(output.status.success(), "{output:?}");
-        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
-        assert!(behavior.status.success(), "{behavior:?}");
+        support::behavior(&directory)?;
     }
 
     assert_eq!(
@@ -45,7 +42,7 @@ fn all_builtin_derives_preserve_behavior_and_raw_source_offsets() -> Result<()> 
 }
 
 #[test]
-fn serde_aliases_and_qualified_paths_sort_and_preserve_roundtrip_behavior() -> Result<()> {
+fn serde_aliases_and_qualified_paths_sort_and_preserve_roundtrip_behavior() -> anyhow::Result<()> {
     let source = r##"#![allow(dead_code)]
 use renamed::{Deserialize as Decode, Serialize as Encode};
 #[derive(Decode, Eq, Encode, Debug, PartialEq)]
@@ -77,8 +74,7 @@ pub enum State { Ready, Value(u32) }
             assert!(support::has_lint(&output, "kiki_grouped_derive_order"), "{output:?}");
         }
 
-        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
-        assert!(behavior.status.success(), "{behavior:?}");
+        support::behavior(&directory)?;
     }
 
     assert_eq!(
@@ -101,7 +97,7 @@ pub enum State { Ready, Value(u32) }
 }
 
 #[test]
-fn supported_third_party_derives_preserve_behavior() -> Result<()> {
+fn supported_third_party_derives_preserve_behavior() -> anyhow::Result<()> {
     let source = r#"use is_empty::IsEmpty as Empty;
 use serde_repr::{Deserialize_repr as Decode, Serialize_repr as Encode};
 use strum::{EnumCount as Count, VariantNames as Names};
@@ -143,8 +139,7 @@ pub enum State { Ready, Done }
             assert!(support::has_lint(&output, "kiki_grouped_derive_order"), "{output:?}");
         }
 
-        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
-        assert!(behavior.status.success(), "{behavior:?}");
+        support::behavior(&directory)?;
     }
 
     assert_eq!(
@@ -165,7 +160,7 @@ pub enum State { Ready, Done }
 }
 
 #[test]
-fn inactive_derives_do_not_produce_facts() -> Result<()> {
+fn inactive_derives_do_not_produce_facts() -> anyhow::Result<()> {
     let directory = support::fixture(
         "#[cfg(any())]\n#[derive(Missing, Eq, PartialEq)] struct Inactive;\n#[derive(PartialEq, Eq)] pub struct Active;\n",
     )?;
@@ -177,7 +172,7 @@ fn inactive_derives_do_not_produce_facts() -> Result<()> {
 }
 
 #[test]
-fn derive_more_derives_resolve_helpers_and_preserve_behavior() -> Result<()> {
+fn derive_more_derives_resolve_helpers_and_preserve_behavior() -> anyhow::Result<()> {
     let source = r#"use derive_more::{Debug as MoreDebug, Display as MoreDisplay};
 #[derive(derive_more::FromStr, derive_more::Constructor, derive_more::From, MoreDisplay, derive_more::Eq, derive_more::PartialEq, MoreDebug)]
 #[cfg_attr(all(), cfg_attr(all(), display("number:{_0}")), allow(dead_code))]
@@ -259,8 +254,7 @@ pub struct Borrowed<T>(Vec<T>);
             );
         }
 
-        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
-        assert!(behavior.status.success(), "{behavior:?}");
+        support::behavior(&directory)?;
     }
 
     let expected = source
@@ -280,7 +274,7 @@ pub struct Borrowed<T>(Vec<T>);
 }
 
 #[test]
-fn additional_strum_derives_preserve_behavior_and_ignore_generated_types() -> Result<()> {
+fn additional_strum_derives_preserve_behavior_and_ignore_generated_types() -> anyhow::Result<()> {
     let source = r#"use strum::Display as Text;
 #[derive(strum::EnumMessage, strum::EnumProperty, strum::EnumIter, strum::FromRepr, strum::EnumString, strum::AsRefStr, Text, PartialEq, Debug)]
 #[cfg_attr(all(), strum(serialize_all = "snake_case"))]
@@ -332,8 +326,7 @@ pub enum Payload<T> { Value(T), #[strum(disabled)] Hidden(T), Empty }
             );
         }
 
-        let behavior = support::cargo(&directory).args(["test", "--lib", "--quiet"]).output()?;
-        assert!(behavior.status.success(), "{behavior:?}");
+        support::behavior(&directory)?;
     }
 
     assert_eq!(

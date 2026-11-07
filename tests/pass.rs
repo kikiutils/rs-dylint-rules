@@ -1,5 +1,3 @@
-use anyhow::Result;
-
 mod support;
 
 const SOURCE: &str = r#"pub mod nested {
@@ -12,7 +10,7 @@ const SOURCE: &str = r#"pub mod nested {
 
 // All rules share one lint pass; enabling them together must not change any rule's output.
 #[test]
-fn inline_module_diagnostics_match_when_rules_are_enabled_together() -> Result<()> {
+fn inline_module_diagnostics_match_when_rules_are_enabled_together() -> anyhow::Result<()> {
     let directory = support::fixture(SOURCE)?;
     support::anyhow(&directory)?;
     let combined = support::run_lints(&directory, false, support::LINTS)?;
@@ -41,7 +39,7 @@ fn inline_module_diagnostics_match_when_rules_are_enabled_together() -> Result<(
 }
 
 #[test]
-fn combined_fixes_converge_and_are_idempotent() -> Result<()> {
+fn combined_fixes_converge_and_are_idempotent() -> anyhow::Result<()> {
     let directory = support::fixture(SOURCE)?;
     support::anyhow(&directory)?;
     let output = support::run_lints(&directory, true, support::LINTS)?;
@@ -49,19 +47,20 @@ fn combined_fixes_converge_and_are_idempotent() -> Result<()> {
     let fixed = support::source(&directory)?;
     assert_eq!(
         fixed,
-        r#"pub mod nested {
-use anyhow::Error as AnyhowError;
-
+        concat!(
+            r#"pub mod nested {
     use std::fmt;
 
 use self::Value as Local;
     #[derive(PartialEq, Eq)] pub struct Value;
 
-    pub fn error() -> AnyhowError {
-use anyhow::anyhow;
- anyhow!("error") }
+    pub fn error() -> anyhow::Error {"#,
+            " \n",
+            r#"use anyhow::anyhow;
+anyhow!("error") }
 }
 "#
+        )
     );
 
     let output = support::run_lints(&directory, false, support::LINTS)?;

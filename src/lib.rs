@@ -1,4 +1,4 @@
-#![feature(default_field_values, rustc_private)]
+#![feature(rustc_private)]
 
 extern crate rustc_errors;
 extern crate rustc_hir;

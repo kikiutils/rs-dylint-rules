@@ -6,7 +6,7 @@
 
 | 規則 | lint 名稱 | 狀態 | Auto-fix |
 | --- | --- | --- | --- |
-| [prefer-imported-apis](prefer-imported-apis.md) | `kiki_prefer_imported_apis` | 已實作 | 安全的限定路徑替換與 import 新增／重用；違規 aliases 與 glob 僅診斷 |
+| [prefer-imported-apis](prefer-imported-apis.md) | `kiki_prefer_imported_apis` | 已實作 | 直接名稱／指定 namespace 路徑修正與 import 新增／重用；違規 leaf aliases、公開 re-export 與 glob 僅診斷 |
 | [import-path-prefix](import-path-prefix.md) | `kiki_import_path_prefix` | 已實作 | 安全的前綴替換與分組拆分；需改寫成群組形式的 module 匯入僅診斷 |
 | [import-module-order](import-module-order.md) | `kiki_import_module_order` | 已實作 | 可安全重排的連續區段；其餘違規僅診斷 |
 | [grouped-derive-order](grouped-derive-order.md) | `kiki_grouped_derive_order` | 已實作 | 純已知 derive 列表的安全排序；含未知 derive 的列表略過 |
