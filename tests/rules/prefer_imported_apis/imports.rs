@@ -17,6 +17,7 @@ pub fn run() -> anyhow::Result<()> {
             .replace("    mod errors", "    use errors::bail;\n    mod errors")
             .replace("errors::bail!", "bail!")
     );
+
     Ok(())
 }
 
@@ -40,6 +41,7 @@ pub async fn run() {
                 "    use tokio ::\n        time ::\n        r#sleep;\n    sleep("
             )
     );
+
     Ok(())
 }
 

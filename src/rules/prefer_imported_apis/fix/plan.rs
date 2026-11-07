@@ -12,7 +12,6 @@ use super::{
         analysis::{
             Access,
             Import,
-            visible_scopes,
         },
         names::NameRequest,
         policy::{
@@ -104,7 +103,7 @@ pub(in super::super) fn plan(
         let mut first_issue = None;
         for &(issue, access) in group {
             let binding = Binding::for_api(&access.api);
-            let scopes = visible_scopes(&access.node);
+            let scopes = syntax::visible_scopes(&access.node);
             let existing = imports.iter().find(|import| {
                 import.allowed
                     && !import.conditional

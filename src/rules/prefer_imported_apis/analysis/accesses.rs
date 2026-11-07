@@ -2,7 +2,6 @@ use kikiutils::types::fx_collections::FxHashSet;
 use ra_ap_syntax::{
     AstNode,
     Edition,
-    SyntaxKind,
     SyntaxNode,
     TextRange,
     TextSize,
@@ -19,7 +18,6 @@ use super::{
     },
     Import,
     paths,
-    scope,
 };
 use crate::{
     diagnostic::{
@@ -83,7 +81,7 @@ pub(in super::super) fn read(
         },
     };
 
-    let scope = scope(&node)?;
+    let scope = syntax::scope(&node)?;
     let conditional = conditional || syntax::crosses_conditional(&node, &scope);
     Some(Access {
         api,
@@ -94,19 +92,6 @@ pub(in super::super) fn read(
         spelling,
         conditional,
     })
-}
-
-pub(in super::super) fn visible_scopes(node: &SyntaxNode) -> Vec<SyntaxNode> {
-    let mut scopes = Vec::new();
-    for scope in node.ancestors().filter(crate::syntax::is_scope) {
-        let module = scope.kind() != SyntaxKind::STMT_LIST;
-        scopes.push(scope);
-        if module {
-            break;
-        }
-    }
-
-    scopes
 }
 
 pub(in super::super) fn check_import_order(
@@ -120,7 +105,7 @@ pub(in super::super) fn check_import_order(
         Form::Qualified { qualifier, .. } => (qualifier.definition, qualifier.name),
     };
 
-    let scopes = visible_scopes(&access.node);
+    let scopes = syntax::visible_scopes(&access.node);
     let matching: Vec<_> = imports
         .iter()
         .filter(|import| import.definition == definition && import.name == name && scopes.contains(&import.scope))

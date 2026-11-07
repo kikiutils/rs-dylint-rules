@@ -55,6 +55,7 @@ pub mod m {
     pub fn error() -> errors::Error { errors::Error::msg("example") }
 }
 "#;
+
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
     assert_eq!(fixed, source.replace("errors::Error", "anyhow::Error"));
     Ok(())

@@ -10,10 +10,7 @@ mod imports;
 mod paths;
 
 pub(super) use self::{
-    accesses::{
-        Access,
-        visible_scopes,
-    },
+    accesses::Access,
     imports::Import,
 };
 use super::{
@@ -67,10 +64,6 @@ pub(super) fn analyze<'a>(
 
     fix::plan(root, source, &imports, &requests, &safe_name, &mut output);
     output
-}
-
-pub(super) fn scope(node: &SyntaxNode) -> Option<SyntaxNode> {
-    node.ancestors().find(crate::syntax::is_scope)
 }
 
 #[cfg(test)]

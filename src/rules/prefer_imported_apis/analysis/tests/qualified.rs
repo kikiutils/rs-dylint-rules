@@ -21,6 +21,7 @@ fn qualified_external_types_keep_generic_and_associated_suffixes() {
             api,
         },
     )];
+
     assert_eq!(analyze(source, &facts, true).issues, []);
 }
 
@@ -43,6 +44,7 @@ fn noncanonical_namespace_aliases_shorten_only_the_resolved_api_prefix() {
             api,
         },
     )];
+
     let fixed = apply(source, &analyze(source, &facts, true));
     assert_eq!(fixed, "fn run() { \nuse std::io;\nlet _: io::Result<u8> = Ok(0); }\n");
 }

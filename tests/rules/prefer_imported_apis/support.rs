@@ -34,6 +34,7 @@ pub(super) fn check_without_timers(directory: &TempDir) -> anyhow::Result<()> {
             "--quiet",
         ])
         .output()?;
+
     assert!(output.status.success(), "{output:?}");
     Ok(())
 }

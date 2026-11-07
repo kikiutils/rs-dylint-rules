@@ -14,6 +14,7 @@ pub fn error() -> errors::Error { bridge::anyhow!("example") }
             crate::support::ANYHOW_VERSION
         ),
     )?;
+
     let output = crate::support::run(&directory, false, support::LINT)?;
     assert!(output.status.success(), "{output:?}");
     assert!(crate::support::has_lint(&output, support::LINT), "{output:?}");
@@ -35,6 +36,7 @@ fn does_not_reuse_a_crate_alias_from_an_unrelated_nested_scope() -> anyhow::Resu
             crate::support::ANYHOW_VERSION
         ),
     )?;
+
     let output = crate::support::run(&directory, false, support::LINT)?;
     assert!(output.status.success(), "{output:?}");
     let diagnostics = crate::support::diagnostics(&output, support::LINT);
@@ -111,6 +113,7 @@ fn permits_module_imports_despite_same_named_value_bindings() -> anyhow::Result<
             "{ \nuse std::process;\n(process, process::id()) }"
         )
     );
+
     Ok(())
 }
 

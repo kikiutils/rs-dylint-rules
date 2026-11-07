@@ -22,6 +22,7 @@ fn binding_conflicts_keep_diagnostics_without_suggestions() {
 fn reuse_only_replacements_survive_an_unsafe_import_insertion() {
     let source =
         "// file banner\n\nfn json() -> ::serde_json::Value { todo!() }\nfn io() -> std::io::Result<()> { Ok(()) }\n";
+
     let facts = [
         (
             range(source, "::serde_json::Value"),
@@ -52,6 +53,7 @@ fn reuse_only_replacements_survive_an_unsafe_import_insertion() {
             },
         ),
     ];
+
     let output = analyze(source, &facts, true);
     assert_eq!(
         apply(source, &output),
@@ -118,6 +120,7 @@ fn comments_inside_the_replaced_path_are_not_erased() {
             api,
         },
     )];
+
     let output = analyze(source, &facts, true);
     assert_eq!(output.issues.len(), 1);
     assert_eq!(apply(source, &output), source);

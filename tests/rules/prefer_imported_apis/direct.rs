@@ -19,6 +19,7 @@ fn imports_qualified_anyhow_macro_and_context_trait() -> anyhow::Result<()> {
                 "    use anyhow::ensure;\n    use anyhow::Context;\n    ensure!"
             )
     );
+
     Ok(())
 }
 
@@ -33,6 +34,7 @@ pub fn result() -> anyhow::Result<()> { Ok(()) }
         fixed,
         source.replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
     );
+
     Ok(())
 }
 
@@ -56,6 +58,7 @@ pub fn check(valid: bool) -> anyhow::Result<()> {
                 "    use anyhow::ensure;\n    use anyhow::bail;\n    ensure!"
             )
     );
+
     Ok(())
 }
 

@@ -32,15 +32,33 @@ pub(crate) fn is_scope(node: &SyntaxNode) -> bool {
     )
 }
 
+pub(crate) fn scope(node: &SyntaxNode) -> Option<SyntaxNode> {
+    node.ancestors().find(is_scope)
+}
+
+pub(crate) fn visible_scopes(node: &SyntaxNode) -> Vec<SyntaxNode> {
+    let mut scopes = Vec::new();
+    for scope in node.ancestors().filter(is_scope) {
+        let module = scope.kind() != SyntaxKind::STMT_LIST;
+        scopes.push(scope);
+        if module {
+            break;
+        }
+    }
+
+    scopes
+}
+
+pub(crate) fn has_conditional_attribute(node: &SyntaxNode) -> bool {
+    node.children()
+        .filter_map(ast::Attr::cast)
+        .any(|attribute| conditional_attribute(&attribute))
+}
+
 pub(crate) fn crosses_conditional(node: &SyntaxNode, until: &SyntaxNode) -> bool {
     node.ancestors()
         .take_while(|ancestor| ancestor != until)
-        .any(|ancestor| {
-            ancestor
-                .children()
-                .filter_map(ast::Attr::cast)
-                .any(|attr| conditional_attribute(&attr))
-        })
+        .any(|ancestor| has_conditional_attribute(&ancestor))
 }
 
 // These attributes do not inspect the rewritten item tokens.

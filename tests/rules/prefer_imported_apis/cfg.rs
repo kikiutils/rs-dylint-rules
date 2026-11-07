@@ -53,5 +53,6 @@ pub fn run() {
         fixed,
         source.replace("let delay = tokio::time::sleep", "let delay = sleep")
     );
+
     support::check_without_timers(&directory)
 }

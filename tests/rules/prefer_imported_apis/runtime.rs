@@ -19,6 +19,7 @@ pub async fn timers() {
             "    use tokio::time::sleep;\n    use tokio::time::timeout;\n    use tokio::time::interval;\n    let delay =",
         )
     );
+
     Ok(())
 }
 
@@ -43,6 +44,7 @@ fn qualifies_task_functions_through_the_fixed_module_alias() -> anyhow::Result<(
                 "    use tokio::task as tokio_task;\n    let handle ="
             )
     );
+
     Ok(())
 }
 
@@ -76,6 +78,7 @@ pub fn errors(
                 .replace("tokio::sync::oneshot::", "tokio_oneshot::")
         )
     );
+
     Ok(())
 }
 

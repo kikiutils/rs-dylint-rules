@@ -8,12 +8,9 @@ use ra_ap_syntax::{
 use rustc_hir::def::Namespace;
 use rustc_span::def_id::DefId;
 
-use super::{
-    super::{
-        model::Event,
-        policy::Form,
-    },
-    scope,
+use super::super::{
+    model::Event,
+    policy::Form,
 };
 use crate::{
     diagnostic::{
@@ -48,7 +45,7 @@ pub(in super::super) fn read(
         .map(|tree| tree.syntax().clone())
         .or_else(|| external.as_ref().map(|item| item.syntax().clone()))?;
 
-    let scope = scope(&node)?;
+    let scope = syntax::scope(&node)?;
     let conditional = node
         .ancestors()
         .filter(|node| {
@@ -57,11 +54,7 @@ pub(in super::super) fn read(
                 ra_ap_syntax::SyntaxKind::USE | ra_ap_syntax::SyntaxKind::EXTERN_CRATE
             )
         })
-        .any(|item| {
-            item.children()
-                .filter_map(ast::Attr::cast)
-                .any(|attribute| syntax::conditional_attribute(&attribute))
-        });
+        .any(|item| syntax::has_conditional_attribute(&item));
 
     let (definition, namespace, name, allowed, namespace_import) = match event {
         Event::Import { api, name, renamed } => {

@@ -26,6 +26,7 @@ fn glob_imports_with_multiple_managed_members_are_reported_once() {
             )
         })
         .collect();
+
     let output = analyze(source, &facts, true);
     assert_eq!(output.issues.len(), 1);
     assert_eq!(output.issues[0].diagnostics[0].range, import_range);
@@ -45,6 +46,7 @@ fn repeated_canonical_accesses_report_a_redundant_namespace_import_once() {
             renamed: true,
         },
     )];
+
     let api = api(
         "id",
         Namespace::ValueNS,
@@ -53,6 +55,7 @@ fn repeated_canonical_accesses_report_a_redundant_namespace_import_once() {
             member: "id".to_owned(),
         },
     );
+
     facts.extend(ranges(source, "process::id").map(|range| {
         (
             range,
@@ -62,11 +65,13 @@ fn repeated_canonical_accesses_report_a_redundant_namespace_import_once() {
             },
         )
     }));
+
     let output = analyze(source, &facts, true);
     assert_eq!(output.issues.len(), 1);
     assert_eq!(
         output.issues[0].diagnostics[0].range,
         range(source, "std::process as process")
     );
+
     assert_eq!(apply(source, &output), source);
 }

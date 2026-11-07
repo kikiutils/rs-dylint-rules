@@ -26,6 +26,7 @@ pub fn error() -> anyhow::Error { anyhow::anyhow!("conditional") }
         fixed,
         source.replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
     );
+
     Ok(())
 }
 
@@ -46,6 +47,7 @@ pub async fn error() -> anyhow::Error { anyhow::anyhow!("example") }
         fixed,
         source.replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
     );
+
     Ok(())
 }
 
@@ -68,6 +70,7 @@ pub fn error() -> anyhow::Error { anyhow::anyhow!("example") }
         fixed,
         source.replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
     );
+
     Ok(())
 }
 

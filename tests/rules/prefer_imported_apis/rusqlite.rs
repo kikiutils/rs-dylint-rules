@@ -27,6 +27,7 @@ fn behavior() {
             .replace("error: &sqlite::Error", "error: &rusqlite::Error")
             .replace("match error { sqlite::Error::", "match error { rusqlite::Error::")
     );
+
     support::behavior(&directory)
 }
 

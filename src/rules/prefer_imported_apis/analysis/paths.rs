@@ -59,11 +59,10 @@ fn macro_spelling(root: &SyntaxNode, range: TextRange, edition: Edition) -> Opti
         return None;
     }
 
-    let conditional = root.covering_element(range).ancestors().any(|node| {
-        node.children()
-            .filter_map(ast::Attr::cast)
-            .any(|attribute| syntax::conditional_attribute(&attribute))
-    });
+    let conditional = root
+        .covering_element(range)
+        .ancestors()
+        .any(|node| syntax::has_conditional_attribute(&node));
 
     if let Some(path) = find(&root, range) {
         return (!syntax::protected(path.syntax())).then(|| (spelling(&path, range), conditional));

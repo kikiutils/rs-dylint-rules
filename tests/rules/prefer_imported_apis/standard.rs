@@ -55,6 +55,7 @@ pub fn prelude() {
             source.replace("std::io::", "io::").replace("std::fmt::", "fmt::")
         )
     );
+
     Ok(())
 }
 
@@ -93,6 +94,7 @@ pub fn error() -> IoError { IoError::other("example") }
                 .replace("IoError::other", "io::Error::other")
         )
     );
+
     let output = crate::support::run(&directory, false, support::LINT)?;
     assert!(output.status.success(), "{output:?}");
     let diagnostics = crate::support::diagnostics(&output, support::LINT);
