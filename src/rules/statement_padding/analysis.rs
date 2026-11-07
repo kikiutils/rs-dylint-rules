@@ -2,6 +2,7 @@ use ra_ap_syntax::{
     AstNode,
     SyntaxKind,
     SyntaxNode,
+    SyntaxToken,
     TextRange,
     TextSize,
     ast,
@@ -15,8 +16,8 @@ use crate::diagnostic::{
     RuleOutput,
 };
 
-// Only layout is changed: a blank line is inserted after the element that needs
-// separation, so comments and attributes stay with the element that follows.
+// Only layout is changed: trailing comments stay with the current element,
+// while leading comments and attributes stay with the next one.
 pub(super) fn analyze(root: &SyntaxNode, source: &str) -> RuleOutput {
     let mut output = RuleOutput::default();
 
@@ -44,24 +45,32 @@ fn check_pair(source: &str, current: &SyntaxNode, next: &SyntaxNode, output: &mu
         return;
     }
 
-    let current_range = current.text_range();
+    // Do not highlight ordinary leading comments, which may actually trail the
+    // previous element. Attributes and doc comments remain part of the item.
+    let start = current
+        .children_with_tokens()
+        .find(|element| !matches!(element.kind(), SyntaxKind::WHITESPACE | SyntaxKind::COMMENT))
+        .map_or(current.text_range().start(), |element| element.text_range().start());
+
+    let current_range = TextRange::new(start, current.text_range().end());
     let multiline = is_multiline(source, current);
     if is_constant(current) && !multiline && is_constant(next) {
         return;
     }
 
-    if !multiline && !is_item(current) {
+    // Item also includes builtin assembly expressions; they remain statements here.
+    let item = ast::Item::can_cast(current.kind()) && current.kind() != SyntaxKind::ASM_EXPR;
+    if !multiline && !item {
         return;
     }
 
-    let message = if is_item(current) {
+    let message = if item {
         "expected a blank line after this item"
     } else {
         "expected a blank line after this multi-line statement"
     };
 
-    let between = &source[TextRange::new(current_range.end(), next.text_range().start())];
-    let Some(newline) = between.find('\n') else {
+    let Some((whitespace, newline)) = padding_whitespace(current) else {
         output.report(Diagnostic {
             range: current_range,
             message: format!("{message}; the next element starts on the same line"),
@@ -70,18 +79,19 @@ fn check_pair(source: &str, current: &SyntaxNode, next: &SyntaxNode, output: &mu
         return;
     };
 
-    let after = &between[newline + 1..];
-    if after.find('\n').is_some_and(|end| after[..end].trim().is_empty()) {
+    let text = whitespace.text();
+    if text[newline + 1..].contains('\n') {
         return;
     }
 
-    let replacement = if between[..newline].ends_with('\r') {
+    let offset = whitespace.text_range().start() + TextSize::of(&text[..=newline]);
+    // A line-comment token can own the CR of a CRLF ending.
+    let replacement = if source[..usize::from(offset)].ends_with("\r\n") {
         "\r\n"
     } else {
         "\n"
     };
 
-    let offset = current_range.end() + TextSize::of(&between[..=newline]);
     output.issues.push(Issue {
         diagnostics: vec![Diagnostic {
             range: current_range,
@@ -94,6 +104,25 @@ fn check_pair(source: &str, current: &SyntaxNode, next: &SyntaxNode, output: &mu
             }],
         }),
     });
+}
+
+// Walk tokens rather than node ranges: the parser may attach a trailing comment
+// to the next item. Only whitespace outside comments can separate elements.
+fn padding_whitespace(node: &SyntaxNode) -> Option<(SyntaxToken, usize)> {
+    let mut token = node.last_token()?.next_token()?;
+    loop {
+        match token.kind() {
+            SyntaxKind::WHITESPACE => {
+                if let Some(newline) = token.text().find('\n') {
+                    return Some((token, newline));
+                }
+            },
+            SyntaxKind::COMMENT => {},
+            _ => return None,
+        }
+
+        token = token.next_token()?;
+    }
 }
 
 // Attributes and comments belong to the element that follows them, so they do
@@ -126,26 +155,6 @@ fn is_declaration(node: &SyntaxNode) -> bool {
         SyntaxKind::MODULE => ast::Module::cast(node.clone()).is_some_and(|module| module.item_list().is_none()),
         _ => false,
     }
-}
-
-fn is_item(node: &SyntaxNode) -> bool {
-    matches!(
-        node.kind(),
-        SyntaxKind::CONST
-            | SyntaxKind::ENUM
-            | SyntaxKind::EXTERN_BLOCK
-            | SyntaxKind::FN
-            | SyntaxKind::IMPL
-            | SyntaxKind::MACRO_CALL
-            | SyntaxKind::MACRO_DEF
-            | SyntaxKind::MACRO_RULES
-            | SyntaxKind::MODULE
-            | SyntaxKind::STATIC
-            | SyntaxKind::STRUCT
-            | SyntaxKind::TRAIT
-            | SyntaxKind::TYPE_ALIAS
-            | SyntaxKind::UNION
-    )
 }
 
 fn is_constant(node: &SyntaxNode) -> bool {
