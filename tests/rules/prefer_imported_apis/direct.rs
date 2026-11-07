@@ -2,7 +2,8 @@ use super::support;
 
 #[test]
 fn imports_qualified_anyhow_macro_and_context_trait() -> anyhow::Result<()> {
-    let source = r#"pub fn check(valid: bool) -> anyhow::Result<String> {
+    let source = r#"use anyhow::Result;
+pub fn check(valid: bool) -> Result<String> {
     anyhow::ensure!(valid, "invalid");
     anyhow::Context::context(std::fs::read_to_string("missing"), "read config")
 }
@@ -24,7 +25,7 @@ fn imports_qualified_anyhow_macro_and_context_trait() -> anyhow::Result<()> {
 }
 
 #[test]
-fn preserves_anyhow_error_and_result_namespaces_while_importing_macros() -> anyhow::Result<()> {
+fn imports_anyhow_result_while_preserving_the_error_namespace() -> anyhow::Result<()> {
     let source = r#"pub fn error() -> anyhow::Error { anyhow::anyhow!("error") }
 pub fn result() -> anyhow::Result<()> { Ok(()) }
 "#;
@@ -32,7 +33,12 @@ pub fn result() -> anyhow::Result<()> { Ok(()) }
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
     assert_eq!(
         fixed,
-        source.replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
+        format!(
+            "use anyhow::Result;\n{}",
+            source
+                .replace("anyhow::Result<", "Result<")
+                .replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
+        )
     );
 
     Ok(())
@@ -40,8 +46,8 @@ pub fn result() -> anyhow::Result<()> { Ok(()) }
 
 #[test]
 fn adds_standalone_macro_imports_without_extending_an_existing_group() -> anyhow::Result<()> {
-    let source = r#"use anyhow::{Context, anyhow};
-pub fn check(valid: bool) -> anyhow::Result<()> {
+    let source = r#"use anyhow::{Context, Result, anyhow};
+pub fn check(valid: bool) -> Result<()> {
     anyhow::ensure!(valid, "invalid");
     anyhow::bail!(anyhow::anyhow!("example"));
 }
@@ -64,9 +70,10 @@ pub fn check(valid: bool) -> anyhow::Result<()> {
 
 #[test]
 fn keeps_new_imports_local_when_an_existing_group_is_between_calls() -> anyhow::Result<()> {
-    let source = r#"pub fn before() -> anyhow::Result<()> { anyhow::bail!("before") }
+    let source = r#"use anyhow::Result;
+pub fn before() -> Result<()> { anyhow::bail!("before") }
 use anyhow::{ensure};
-pub fn after() -> anyhow::Result<()> { ensure!(true); anyhow::bail!("after") }
+pub fn after() -> Result<()> { ensure!(true); anyhow::bail!("after") }
 "#;
 
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
@@ -84,8 +91,8 @@ pub fn after() -> anyhow::Result<()> { ensure!(true); anyhow::bail!("after") }
 #[test]
 fn accepts_context_import_used_only_through_extension_methods() -> anyhow::Result<()> {
     support::accepted(
-        r#"use anyhow::Context;
-pub fn read() -> anyhow::Result<String> {
+        r#"use anyhow::{Context, Result};
+pub fn read() -> Result<String> {
     std::fs::read_to_string("missing").context("read config")
 }
 "#,
@@ -96,8 +103,8 @@ pub fn read() -> anyhow::Result<String> {
 #[test]
 fn diagnoses_context_alias_used_only_through_extension_methods() -> anyhow::Result<()> {
     support::diagnosed(
-        r#"use anyhow::Context as ErrorContext;
-pub fn read() -> anyhow::Result<String> {
+        r#"use anyhow::{Context as ErrorContext, Result};
+pub fn read() -> Result<String> {
     std::fs::read_to_string("missing").context("read config")
 }
 "#,
@@ -108,8 +115,8 @@ pub fn read() -> anyhow::Result<String> {
 #[test]
 fn diagnoses_renamed_anyhow_macros() -> anyhow::Result<()> {
     support::diagnosed(
-        r#"use anyhow::bail as fail;
-pub fn run() -> anyhow::Result<()> { fail!("example") }
+        r#"use anyhow::{bail as fail, Result};
+pub fn run() -> Result<()> { fail!("example") }
 "#,
         &support::anyhow(),
     )

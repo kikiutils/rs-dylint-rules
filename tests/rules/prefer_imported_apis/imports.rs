@@ -2,9 +2,10 @@ use super::support;
 
 #[test]
 fn standalone_imports_preserve_the_resolved_local_module_route() -> anyhow::Result<()> {
-    let source = r#"mod errors { pub use anyhow::Context; }
+    let source = r#"use anyhow::Result;
+mod errors { pub use anyhow::Context; }
 use errors::{Context};
-pub fn run() -> anyhow::Result<()> {
+pub fn run() -> Result<()> {
     mod errors { pub use anyhow::bail; }
     errors::bail!("example")
 }

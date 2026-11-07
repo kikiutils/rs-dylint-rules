@@ -36,7 +36,7 @@
 
 | API／家族 | 指定名稱／使用例 |
 | --- | --- |
-| `anyhow::Context` | `use anyhow::Context;`，使用 `Context` 或其 trait 方法 |
+| `anyhow::{Context, Result}` | `use anyhow::{Context, Result};`，使用 `Context`／其 trait 方法與 `Result<T>` |
 | anyhow bang macros | `use anyhow::{anyhow, bail, ensure};`，使用 `anyhow!()`、`bail!()`、`ensure!()` |
 | `tokio::time` 自由函式 | `sleep()`、`sleep_until()`、`timeout()`、`timeout_at()`、`interval()`、`interval_at()`；其餘自由函式依同一直接匯入政策，不強制 `tokio_time::` |
 
@@ -53,6 +53,7 @@
 | `std::thread` 自由函式 | `thread::spawn()`、`thread::sleep()`、`thread::available_parallelism()` |
 | `std::io` 自由函式 | `io::stdin()`、`io::stdout()`、`io::stderr()`、`io::copy()` |
 | `std::io::{Error, ErrorKind, Result}` | `io::Error`、`io::ErrorKind`、`io::Result<T>`，不使用 `IoError` 等 aliases |
+| `std::result::Result`（含 prelude 的 `Result<T, E>`） | `use std::result;` 後使用 `result::Result<T, E>`；`no_std` 使用 `core::result` |
 | `std::fmt::{Error, Result}` | `fmt::Error`、`fmt::Result`，不使用 `FmtError`／`FmtResult` |
 
 `Command`、`Display`、`Formatter` 等未列型別不受限制。標準庫 re-export 自 core 的 API 依實際身分辨識，不因 DefId 位於 core 而漏查。
@@ -61,7 +62,7 @@
 
 | API／家族 | 統一形式 |
 | --- | --- |
-| `anyhow::{Error, Result}` | `anyhow::Error`、`anyhow::Result<T>`；不使用裸 `Error`／`Result` 或 `AnyhowError`／`AnyhowResult` |
+| `anyhow::Error` | `anyhow::Error`；不使用裸 `Error` 或 `AnyhowError` |
 | `rusqlite::Error` | `rusqlite::Error`；不直接匯入為裸 `Error`，也不使用 `SqliteError`／`RusqliteError` 等 aliases；不連帶限制 `Result`、`Connection` 等未列 API |
 | `anstream::{stdout, stderr}` 自由函式 | `anstream::stdout()`、`anstream::stderr()`；不直接匯入為 `stdout`／`stderr`，以區分 `std::io` 的同名函式 |
 | `serde_json` 序列化／反序列化與值轉換函式 | `serde_json::from_str()`、`serde_json::from_slice()`、`serde_json::from_value()`、`serde_json::to_string()`、`serde_json::to_vec()`、`serde_json::to_value()` 等 |
@@ -76,7 +77,7 @@
 | `serde_json::{Value, Map, Error, Result}` | `serde_json::Value`、`serde_json::Map`、`serde_json::Error`、`serde_json::Result<T>`；不使用裸名稱或 `JsonValue` 等 aliases |
 | `toml::{Value, Table}` | `toml::Value`、`toml::Table`，不使用裸名稱或另造 aliases |
 
-上述限制只針對相應 API 身分，不影響 prelude 的 `Result<T, E>`。`Serialize`、`Deserialize`、`DeserializeOwned`、`ToHex` 等 traits 不因轉換函式政策而要求限定路徑。
+標準庫的 `Result<T, E>` 保留 `result::` namespace，以區分直接匯入的 `anyhow::Result`；此限制包含 prelude 的裸 `Result`，但不限制 `Ok`／`Err` 的一般用法。`Serialize`、`Deserialize`、`DeserializeOwned`、`ToHex` 等 traits 不因轉換函式政策而要求限定路徑。
 
 anstream 此項只涵蓋 `stdout`／`stderr` 函式，不連帶限制同名型別或輸出巨集；公開 API 見 [anstream 文件](https://docs.rs/anstream/latest/anstream/)。使用 crate namespace 不要求額外的 `use anstream;`。
 
@@ -104,9 +105,9 @@ confique 保留完整的 `confique::<格式>::` 前綴，不直接匯入 `templa
 ```rust
 use std::{io, process};
 
-use anyhow::{Context, ensure};
+use anyhow::{Context, Result, ensure};
 
-fn parse(text: &str) -> anyhow::Result<serde_json::Value> {
+fn parse(text: &str) -> Result<serde_json::Value> {
     ensure!(!text.is_empty(), "設定不可為空");
     serde_json::from_str(text).context("JSON 格式錯誤")
 }
@@ -137,14 +138,14 @@ async fn send_later() {
 
 ```rust
 use std::{io::Error as IoError, process::id}; // 應保留 io::Error、process::id。
-use anyhow::{Error as AnyhowError, Result}; // 應使用 anyhow::Error／anyhow::Result。
+use anyhow::{Error as AnyhowError, Result as AnyhowResult}; // 應使用 anyhow::Error，並以原名匯入 Result。
 use anstream::{stdout, stderr}; // 應直接使用 anstream::stdout()／anstream::stderr()。
 use serde_json::{Value as JsonValue, from_slice}; // 應保留 serde_json:: 前綴。
 use confique::toml::{template, FormatOptions}; // 應保留 confique::toml:: 前綴。
 use tokio::sync::mpsc::{Sender, channel}; // 應匯入 module 為 tokio_mpsc。
 use tokio::task::spawn; // 應使用 tokio_task::spawn。
 
-fn fail() -> anyhow::Result<()> {
+fn fail() -> anyhow::Result<()> { // 應先 use anyhow::Result，再使用 Result<()>。
     anyhow::bail!("failed"); // 應先 use anyhow::bail，再使用 bail!。
 }
 ```

@@ -4,6 +4,9 @@ use super::{
 };
 
 pub(super) const FAMILIES: &[Family] = &[
-    Family::direct("anyhow", Members::Named(&["Context", "anyhow", "bail", "ensure"])),
-    Family::qualified("anyhow", "anyhow", "anyhow", Members::Named(&["Error", "Result"])),
+    Family::direct(
+        "anyhow",
+        Members::Named(&["Context", "Result", "anyhow", "bail", "ensure"]),
+    ),
+    Family::qualified("anyhow", "anyhow", "anyhow", Members::Named(&["Error"])),
 ];

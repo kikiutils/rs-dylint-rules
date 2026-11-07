@@ -34,8 +34,9 @@ fn qualifies_standard_functions_and_core_reexports() -> anyhow::Result<()> {
 
 #[test]
 fn qualifies_error_types_without_restricting_other_types_or_prelude_functions() -> anyhow::Result<()> {
-    let source = r#"use std::process as proc;
-pub fn result() -> std::io::Result<Result<(), std::io::Error>> { Ok(Ok(())) }
+    let source = r#"use std::result;
+use std::process as proc;
+pub fn result() -> std::io::Result<result::Result<(), std::io::Error>> { Ok(Ok(())) }
 pub fn format_result() -> std::fmt::Result { Ok(()) }
 pub fn format_error() -> std::fmt::Error { std::fmt::Error }
 pub fn kind() -> std::io::ErrorKind { std::io::ErrorKind::Other }

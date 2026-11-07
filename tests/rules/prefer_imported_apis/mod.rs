@@ -6,6 +6,7 @@ mod imports;
 mod macro_inputs;
 mod prelude;
 mod resolution;
+mod result;
 mod runtime;
 mod rusqlite;
 mod safety;
