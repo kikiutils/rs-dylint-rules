@@ -55,8 +55,10 @@ fn macro_spelling(root: &SyntaxNode, range: TextRange, edition: Edition) -> Opti
         if name.text().trim_start_matches("r#") != "matches" {
             return None;
         }
+
         parse_match_input(&input, &text, range, edition)?
     };
+
     // A nested module does not inherit imports from the original call's scope.
     if root
         .covering_element(range)
@@ -88,6 +90,7 @@ fn parse_match_input(
                 && !matches!(element.kind(), SyntaxKind::WHITESPACE | SyntaxKind::COMMENT)
         })
         .last()?;
+
     let end = if last.kind() == SyntaxKind::COMMA {
         usize::from(last.text_range().start() - input_range.start())
     } else {
@@ -106,6 +109,7 @@ fn parse_match_input(
         if split >= end {
             continue;
         }
+
         let wrapped = format!("match ({}){{{}\n=> () }}", &text[1..split], &text[split + 1..end]);
         let parsed = ast::Expr::parse(&wrapped, edition);
         if parsed.errors().is_empty() {
@@ -115,9 +119,11 @@ fn parse_match_input(
             if range.start() > separator {
                 offset += TextSize::from(1);
             }
+
             return Some((parsed.syntax_node(), range + offset));
         }
     }
+
     None
 }
 

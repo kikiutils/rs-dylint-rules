@@ -134,6 +134,7 @@ fn match_macro_inputs_preserve_offsets_through_patterns_guards_and_nesting() {
                 )
             })
             .collect();
+
         assert_eq!(
             apply(&source, &analyze(&source, &facts, true)),
             source.replace("Errno", "rustix::io::Errno"),

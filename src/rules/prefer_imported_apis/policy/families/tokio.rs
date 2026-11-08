@@ -5,12 +5,7 @@ use super::{
 
 pub(super) const FAMILIES: &[Family] = &[
     Family::direct("tokio::time", Members::Functions(&[])),
-    Family::qualified("tokio::task", "tokio::task", "tokio_task", Members::Functions(&[])),
-    Family::qualified("tokio::sync::mpsc", "tokio::sync::mpsc", "tokio_mpsc", Members::Channel),
-    Family::qualified(
-        "tokio::sync::oneshot",
-        "tokio::sync::oneshot",
-        "tokio_oneshot",
-        Members::Channel,
-    ),
+    Family::qualified("tokio::task", "tokio", "tokio", Members::Functions(&[])),
+    Family::qualified("tokio::sync::mpsc", "tokio", "tokio", Members::Channel),
+    Family::qualified("tokio::sync::oneshot", "tokio", "tokio", Members::Channel),
 ];

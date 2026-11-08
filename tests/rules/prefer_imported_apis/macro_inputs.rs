@@ -19,6 +19,7 @@ fn behavior() {
     assert!(!retry(None));
 }
 ";
+
     let directory = support::fixture(&format!("{import}{body}"), "rustix=\"=1.1.6\"")?;
     support::behavior(&directory)?;
     let output = crate::support::run(&directory, true, support::LINT)?;
@@ -32,6 +33,7 @@ fn behavior() {
                 .replace("code == Errno::", "code == rustix::io::Errno::")
         )
     );
+
     support::clean(&directory)?;
     let output = crate::support::run(&directory, true, support::LINT)?;
     assert!(output.status.success(), "{output:?}");

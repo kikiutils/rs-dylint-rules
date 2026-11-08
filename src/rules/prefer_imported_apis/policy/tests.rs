@@ -44,16 +44,16 @@ fn canonical_forms_keep_the_namespace_and_member_independent() {
 
     api.form = Form::Qualified {
         qualifier: Qualifier {
-            source: "tokio::sync::mpsc",
-            name: "tokio_mpsc",
+            source: "tokio",
+            name: "tokio",
             definition: definition(),
             root: definition(),
-            external: false,
+            external: true,
         },
-        member: "error::TryRecvError".to_owned(),
+        member: "sync::mpsc::error::TryRecvError".to_owned(),
     };
 
-    assert_eq!(api.canonical(), "tokio_mpsc::error::TryRecvError");
+    assert_eq!(api.canonical(), "tokio::sync::mpsc::error::TryRecvError");
 }
 
 #[test]

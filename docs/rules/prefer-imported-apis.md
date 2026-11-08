@@ -4,7 +4,7 @@
 
 ## 目的
 
-讓指定 API 在各 repositories 使用固定且能辨認來源的形式：一般指定項目直接匯入，來源語意不可省略者保留 namespace，容易混淆的實作使用固定 module alias。這是本 repo 的風格政策，不是 Rust 語意要求，也不追求所有 API 都有相同的路徑段數。
+讓指定 API 在各 repositories 使用固定且能辨認來源的形式：一般指定項目直接匯入，其他項目依來源語意保留指定 module 或完整 crate 前綴。這是本 repo 的風格政策，不是 Rust 語意要求，也不追求所有 API 都有相同的路徑段數。
 
 ## 適用範圍
 
@@ -23,12 +23,11 @@
 | --- | --- |
 | 直接匯入 | 匯入指定項目並使用原名；無法安全引入短名時退回完整路徑。 |
 | 指定 namespace | 必須保留表列的 namespace，不得將成員直接匯入為裸名稱或型別 alias。 |
-| 固定 module alias | 必須以指定名稱匯入 module，成員仍保留該 namespace；即使只使用一種實作也不省略 alias。 |
 
 - 需要的 binding 必須在使用點可見，不檢查既有 import 的上下位置，也不補齊未使用的項目。新增 import 通常置於所在 module 開頭，遇到 `#[cfg]` 時留在該邊界內。crate root 已可由 extern prelude 使用時，不要求冗餘的 `use anyhow;`、`use serde_json;` 或 `use toml;`。
 - 指定形式同時適用於型別標註、泛型、關聯項目存取與非呼叫用法，不限於 `fn()` 語法；不以有無 `.await` 判斷 API 來源。
 - 使用點須採表列的完整形式，而不是只要包含該 namespace 即可。例如 `std::process::id()`、`std::io::Error` 須改為 `process::id()`、`io::Error`；`confique::toml::template` 則保留表列的來源與格式前綴。此要求只作用於受管 API，不限制 `tokio::process::Command` 等未列項目。
-- 受管 API 禁止任意改名，包括使用點 namespace 的任意 alias；既有 import 的冗餘同名 `as` 不另行診斷。固定 module alias 是明列的允許形式。module alias 若只用於未受管項目（例如 `use std::process as proc; proc::Command::new(...)`），不受此限制；透過該 alias 使用受管 API（例如 `proc::id()`）則仍違規。
+- 受管 API 禁止任意改名，包括使用點 namespace 的任意 alias；既有 import 的冗餘同名 `as` 不另行診斷。module alias 若只用於未受管項目（例如 `use std::process as proc; proc::Command::new(...)`），不受此限制；透過該 alias 使用受管 API（例如 `proc::id()`）則仍違規。
 - 政策只套用在使用點。既有 alias、公開 re-export 與 glob 宣告原樣保留；經解析確認的合規 binding 可直接重用。
 - 本規則不修改 Cargo manifest，不自行發明 alias；短名不可用時的 fallback 見[政策例外](#政策例外)。
 
@@ -70,6 +69,11 @@
 
 | API／家族 | 統一形式 |
 | --- | --- |
+| `tokio::task` 自由函式 | `tokio::task::spawn()`、`tokio::task::spawn_blocking()`、`tokio::task::yield_now()` |
+| `std::sync::mpsc` 自由函式與型別 | `std::sync::mpsc::channel()`、`std::sync::mpsc::Sender<T>`、`std::sync::mpsc::RecvError`；不直接匯入為 `channel`、`Sender` |
+| `tokio::sync::mpsc` 自由函式與型別，含 error 子 module | `tokio::sync::mpsc::channel()`、`tokio::sync::mpsc::UnboundedReceiver<T>`、`tokio::sync::mpsc::error::TryRecvError`；不直接匯入為 `channel`、`Sender` |
+| `tokio::sync::oneshot` 自由函式與型別，含 error 子 module | `tokio::sync::oneshot::channel()`、`tokio::sync::oneshot::Sender<T>`、`tokio::sync::oneshot::error::RecvError`；不直接匯入為 `channel`、`Sender` |
+| `tracing_subscriber::fmt` 入口函式、module 與直屬自由函式／具體型別 | `tracing_subscriber::fmt()`、`tracing_subscriber::fmt::layer()`、`tracing_subscriber::fmt::Layer<S>` |
 | `anyhow::Error` | `anyhow::Error`；不使用裸 `Error` 或 `AnyhowError` |
 | `rusqlite::Error` | `rusqlite::Error`；不直接匯入為裸 `Error`，也不使用 `SqliteError`／`RusqliteError` 等 aliases；不連帶限制 `Result`、`Connection` 等未列 API |
 | `anstream::{stdout, stderr}` 自由函式 | `anstream::stdout()`、`anstream::stderr()`；不直接匯入為 `stdout`／`stderr`，以區分 `std::io` 的同名函式 |
@@ -91,6 +95,10 @@ anstream 此項只涵蓋 `stdout`／`stderr` 函式，不連帶限制同名型�
 
 confique 保留完整的 `confique::<格式>::` 前綴，不直接匯入 `template`／`FormatOptions`，也不將格式 module 匯入為 `toml`、`yaml`、`json5` 或另設 alias，以區分同名格式 crates。此項只涵蓋表列函式與型別（含其關聯項目存取），不限制 `Config`／`Layer` traits 或其他未列 API；格式 features 見 [confique 文件](https://docs.rs/confique/0.4.0/confique/#cargo-features)。
 
+`tokio::spawn` 與 `tokio::task::spawn` 若解析為相同 API，均使用 `tokio::task::spawn`。此項不限制 `JoinHandle` 等型別命名。
+
+`std::fmt` 與 `tracing_subscriber::fmt` 是不同的 module，同時匯入為 `fmt` 會衝突。因此標準庫保留 `fmt::…`，tracing 一律保留完整 crate 前綴；`FormatEvent`／`FormatFields` 等 traits 可正常匯入，不擴大限制其他 tracing API。
+
 ### 系統與非同步 I/O namespace
 
 | API／家族 | 統一形式 |
@@ -100,17 +108,6 @@ confique 保留完整的 `confique::<格式>::` 前綴，不直接匯入 `templa
 | `libc` 自由函式、常數與 libc 自有具體型別 | `libc::fork()`、`libc::syscall()`、`libc::AT_EMPTY_PATH` |
 
 不將這些 module 先匯入為 `io` 或其他 alias。traits（包含 `AsyncReadExt`／`AsyncWriteExt`）可正常匯入。標準庫／core 定義的共享 re-exports 不納入新家族：Tokio 的 `Error`／`ErrorKind`／`Result` 沿用標準庫政策；rustix 的 std `IoSlice`／`IoSliceMut`、libc 的 core `c_int`／`c_void` 等不因新家族而被要求改成該 crate 的路徑。是否屬於共享項目依編譯器解析身分判定。
-
-### Tokio task 與 Channel 的固定 module aliases
-
-| 來源／範圍 | 固定匯入 | 統一使用例 |
-| --- | --- | --- |
-| `tokio::task` 自由函式 | `use tokio::task as tokio_task;` | `tokio_task::spawn()`、`tokio_task::spawn_blocking()`、`tokio_task::yield_now()`、`tokio_task::id()` |
-| `std::sync::mpsc` 自由函式與型別 | `use std::sync::mpsc as std_mpsc;` | `std_mpsc::channel()`、`std_mpsc::Sender<T>`、`std_mpsc::SyncSender<T>`、`std_mpsc::RecvError` |
-| `tokio::sync::mpsc` 自由函式與型別，含 error 子 module | `use tokio::sync::mpsc as tokio_mpsc;` | `tokio_mpsc::channel()`、`tokio_mpsc::UnboundedReceiver<T>`、`tokio_mpsc::error::TryRecvError` |
-| `tokio::sync::oneshot` 自由函式與型別，含 error 子 module | `use tokio::sync::oneshot as tokio_oneshot;` | `tokio_oneshot::channel()`、`tokio_oneshot::Sender<T>`、`tokio_oneshot::error::RecvError` |
-
-`tokio::spawn` 與 `tokio::task::spawn` 若解析為相同 API，均使用 `tokio_task::spawn`。Channel 不使用裸 `channel()`、`Sender<T>`／`Receiver<T>`，也不另造 `AsyncSender` 等 aliases。此表不限制 `JoinHandle`、`Instant` 或鎖型別的命名。
 
 ### 與其他規則的分工
 
@@ -138,11 +135,11 @@ fn io_error() -> io::Error {
 ```rust
 use std::time::Duration;
 
-use tokio::{sync::mpsc as tokio_mpsc, task as tokio_task, time::sleep};
+use tokio::time::sleep;
 
 async fn send_later() {
-    let (sender, mut receiver) = tokio_mpsc::channel::<u8>(1);
-    tokio_task::spawn(async move {
+    let (sender, mut receiver) = tokio::sync::mpsc::channel::<u8>(1);
+    tokio::task::spawn(async move {
         sleep(Duration::from_millis(10)).await;
         let _ = sender.send(1).await;
     });
@@ -191,8 +188,8 @@ fn fail() -> AnyhowResult<()> { // 改用 Result<()>，必要時新增 use anyho
 ## 驗證與安全性依據
 
 - 固定工具鏈見 [`rust-toolchain.toml`](../../rust-toolchain.toml)。單元測試依政策與分析分組於 [`policy/tests.rs`](../../src/rules/prefer_imported_apis/policy/tests.rs)、[`analysis/tests/`](../../src/rules/prefer_imported_apis/analysis/tests/mod.rs)；整合測試依 API 家族與安全邊界分組於 [`tests/rules/prefer_imported_apis/`](../../tests/rules/prefer_imported_apis/mod.rs)。測試檔案的存在不等同於特定 compiler／依賴版本已通過驗證。
-- 工具鏈固定為 `nightly-2026-10-15`；家族 fixtures 使用 anyhow `1.0.104`、Tokio `1.54.1`、anstream `1.0.0`、serde_json `1.0.154`、toml `1.2.1`、rmp-serde `1.3.1`、postcard `1.1.3`、ciborium `0.2.2`、hex `0.4.3` 與 confique `0.4.0`（TOML／YAML／JSON5）；另以 rusqlite `0.41.1`（bundled）驗證 Error 政策；系統家族 fixtures 使用 rustix `1.1.6`、libc `0.2.191`，derive 路徑修復包含 thiserror `2.0.21`。不因此宣稱其他平台、版本或所有 feature 組合皆已驗證。
-- 政策參考：標準庫 [prelude](https://doc.rust-lang.org/std/prelude/v1/index.html)、[io::Result](https://doc.rust-lang.org/std/io/type.Result.html)，以及 Tokio [time](https://docs.rs/tokio/latest/tokio/time/)／[task](https://docs.rs/tokio/latest/tokio/task/)。這些文件用於核對 API 與慣例，不代表本專案的固定 alias 或所有改寫已獲安全驗證。
+- 工具鏈固定為 `nightly-2026-10-15`；家族 fixtures 使用 anyhow `1.0.104`、Tokio `1.54.1`、tracing-subscriber `0.3.23`（`default-features = false`、`features = ["fmt"]`）、anstream `1.0.0`、serde_json `1.0.154`、toml `1.2.1`、rmp-serde `1.3.1`、postcard `1.1.3`、ciborium `0.2.2`、hex `0.4.3` 與 confique `0.4.0`（TOML／YAML／JSON5）；另以 rusqlite `0.41.1`（bundled）驗證 Error 政策；系統家族 fixtures 使用 rustix `1.1.6`、libc `0.2.191`，derive 路徑修復包含 thiserror `2.0.21`。不因此宣稱其他平台、版本或所有 feature 組合皆已驗證。
+- 政策參考：標準庫 [prelude](https://doc.rust-lang.org/std/prelude/v1/index.html)、[io::Result](https://doc.rust-lang.org/std/io/type.Result.html)，以及 Tokio [time](https://docs.rs/tokio/latest/tokio/time/)／[task](https://docs.rs/tokio/latest/tokio/task/)。這些文件用於核對 API 與慣例，不代表本專案的命名政策或所有改寫已獲安全驗證。
 - 修正的驗證項目包括修正前後編譯／行為、完整修正原文比對與再次 lint 的冪等性；不將個別案例外推為所有 API 均可安全改寫。升級 compiler 或依賴時須重新查核解析身分與修正結果。
 
 ## 未決事項或後續規劃

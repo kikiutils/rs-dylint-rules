@@ -26,7 +26,7 @@ pub async fn timers() {
 }
 
 #[test]
-fn qualifies_task_functions_through_the_fixed_module_alias() -> Result<()> {
+fn qualifies_task_functions_through_the_tokio_namespace() -> Result<()> {
     let source = r"pub async fn tasks() {
     let handle = tokio::spawn(async { 1 });
     let blocking = tokio::task::spawn_blocking(|| 2);
@@ -36,21 +36,13 @@ fn qualifies_task_functions_through_the_fixed_module_alias() -> Result<()> {
 ";
 
     let (_, fixed) = support::fixed(source, &support::tokio())?;
-    assert_eq!(
-        fixed,
-        format!(
-            "use tokio::task as tokio_task;\n{}",
-            source
-                .replace("tokio::spawn", "tokio_task::spawn")
-                .replace("tokio::task::", "tokio_task::")
-        )
-    );
+    assert_eq!(fixed, source.replace("tokio::spawn", "tokio::task::spawn"));
 
     Ok(())
 }
 
 #[test]
-fn qualifies_channel_functions_types_and_errors_with_their_fixed_aliases() -> Result<()> {
+fn accepts_channel_functions_types_and_errors_with_full_paths() -> Result<()> {
     let source = r"pub fn channels() -> (
     std::sync::mpsc::Sender<u8>,
     tokio::sync::mpsc::Sender<u8>,
@@ -68,35 +60,31 @@ pub fn errors(
 ) {}
 ";
 
-    let (_, fixed) = support::fixed(source, &support::tokio())?;
-    assert_eq!(
-        fixed,
-        format!(
-            "use std::sync::mpsc as std_mpsc;\nuse tokio::sync::mpsc as tokio_mpsc;\nuse tokio::sync::oneshot as tokio_oneshot;\n{}",
-            source
-                .replace("std::sync::mpsc::", "std_mpsc::")
-                .replace("tokio::sync::mpsc::", "tokio_mpsc::")
-                .replace("tokio::sync::oneshot::", "tokio_oneshot::")
-        )
-    );
-
-    Ok(())
+    support::accepted(source, &support::tokio())
 }
 
 #[test]
-fn accepts_fixed_aliases_without_constraining_other_tokio_types() -> Result<()> {
-    support::accepted(
-        r#"use std::sync::mpsc as std_mpsc;
-use tokio::{sync::{mpsc as tokio_mpsc, oneshot as tokio_oneshot}, task as tokio_task};
+fn qualifies_channel_namespaces_without_constraining_other_tokio_types() -> Result<()> {
+    let source = r#"use std::sync::mpsc as std_mpsc;
+use tokio::sync::{mpsc as tokio_mpsc, oneshot as tokio_oneshot};
 use tokio::process as command_process;
 pub fn standard() -> std_mpsc::Sender<u8> { std_mpsc::channel().0 }
 pub fn asynchronous() -> tokio_mpsc::Sender<u8> { tokio_mpsc::channel(1).0 }
 pub fn single() -> tokio_oneshot::Sender<u8> { tokio_oneshot::channel().0 }
 pub fn command() -> command_process::Command { command_process::Command::new("example") }
-pub async fn task() -> tokio::task::JoinHandle<()> { tokio_task::spawn(async {}) }
-"#,
-        &support::tokio(),
-    )
+pub async fn task() -> tokio::task::JoinHandle<()> { tokio::task::spawn(async {}) }
+"#;
+
+    let (_, fixed) = support::fixed(source, &support::tokio())?;
+    assert_eq!(
+        fixed,
+        source
+            .replace("std_mpsc::", "std::sync::mpsc::")
+            .replace("tokio_mpsc::", "tokio::sync::mpsc::")
+            .replace("tokio_oneshot::", "tokio::sync::oneshot::")
+    );
+
+    Ok(())
 }
 
 #[test]
@@ -108,12 +96,9 @@ pub fn create() -> Sender<u8> { channel(1).0 }
     let (_, fixed) = support::rewritten(source, &support::tokio())?;
     assert_eq!(
         fixed,
-        format!(
-            "use tokio::sync::mpsc as tokio_mpsc;\n{}",
-            source
-                .replace("-> Sender", "-> tokio_mpsc::Sender")
-                .replace("{ channel(", "{ tokio_mpsc::channel(")
-        )
+        source
+            .replace("-> Sender", "-> tokio::sync::mpsc::Sender")
+            .replace("{ channel(", "{ tokio::sync::mpsc::channel(")
     );
 
     Ok(())

@@ -22,7 +22,7 @@
 | `src/diagnostic.rs` | 語法層的診斷與 edits，以及共用的 crate 層級 emit。 |
 | `src/rules/*/collect.rs`／`collect/` | 收集 rustc 語意並銜接各規則的分析。`statement_padding` 不需 facts，沒有 collector，其分析入口在 `mod.rs`。 |
 | `src/rules/*/analysis.rs`／`analysis/` | 依 CST、原文與 compiler facts 產生診斷與修正要求。 |
-| `src/rules/prefer_imported_apis/policy/` | 分檔宣告 API 家族，由公開 exports 建立 DefId 索引，集中直接名稱、指定 namespace 與固定 module alias 政策。 |
+| `src/rules/prefer_imported_apis/policy/` | 分檔宣告 API 家族，由公開 exports 建立 DefId 索引，集中直接名稱、指定 module 與完整 crate 前綴政策。 |
 | `src/rules/prefer_imported_apis/names/` | 收齊 rustc bindings 後解析原始路徑各段的 lexical／qualified references（包含 import 與已解析的 bang／attribute／derive 巨集前綴），依名稱空間、作用域與 glob 使用端判斷新增／重用名稱是否安全。 |
 | `src/rules/prefer_imported_apis/fix.rs` | 將 analysis 的共用決策轉為使用點替換及新增 imports；依 target／binding 去重，同檔所有 edits 合成一筆 multipart suggestion。 |
 | `src/test_support.rs` | analysis 單元測試套用 edits 的 helper。 |

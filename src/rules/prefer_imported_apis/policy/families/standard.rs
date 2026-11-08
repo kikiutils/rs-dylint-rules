@@ -20,7 +20,7 @@ pub(super) const FAMILIES: &[Family] = &[
         Members::Named(&["Error", "ErrorKind", "Result"]),
     ),
     Family::qualified("std::fmt", "std::fmt", "fmt", Members::Named(&["Error", "Result"])),
-    Family::qualified("std::sync::mpsc", "std::sync::mpsc", "std_mpsc", Members::Channel),
+    Family::qualified("std::sync::mpsc", "std", "std", Members::Channel),
     // std reexports these same definitions. The fallback also works in no_std crates.
     Family::qualified("core::mem", "core::mem", "mem", Members::Functions(PRELUDE)).fallback(),
     Family::qualified("core::ptr", "core::ptr", "ptr", Members::Functions(&[])).fallback(),

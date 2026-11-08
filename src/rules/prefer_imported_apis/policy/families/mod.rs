@@ -5,6 +5,7 @@ mod platform;
 mod rusqlite;
 mod standard;
 mod tokio;
+mod tracing;
 
 pub(super) struct Family {
     pub(super) module: &'static str,
@@ -53,5 +54,6 @@ pub(super) fn all() -> impl Iterator<Item = &'static Family> {
         .chain(rusqlite::FAMILIES)
         .chain(confique::FAMILIES)
         .chain(tokio::FAMILIES)
+        .chain(tracing::FAMILIES)
         .chain(platform::FAMILIES)
 }

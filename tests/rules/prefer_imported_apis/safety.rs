@@ -19,11 +19,7 @@ pub fn channels(_: std::sync::mpsc::Sender<u8>) {}
         fixed,
         source
             .replace("std::io::Result", "io::Result")
-            .replace("std::sync::mpsc::Sender", "std_mpsc::Sender")
-            .replace(
-                "#![allow(dead_code)]",
-                "#![allow(dead_code)]use std::io;\nuse std::sync::mpsc as std_mpsc;\n"
-            )
+            .replace("#![allow(dead_code)]", "#![allow(dead_code)]use std::io;\n")
     );
 
     Ok(())
