@@ -25,7 +25,7 @@ pub(super) fn target(node: &SyntaxNode) -> Option<SyntaxNode> {
     }
 }
 
-fn has_cfg(node: &SyntaxNode) -> bool {
+pub(super) fn has_cfg(node: &SyntaxNode) -> bool {
     node.children().filter_map(ast::Attr::cast).any(|attr| {
         attr.meta()
             .and_then(|meta| meta.simple_name())

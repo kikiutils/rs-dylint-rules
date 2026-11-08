@@ -25,7 +25,7 @@ timers=["dep:tokio"]"#
     )
 }
 
-pub(super) fn check_without_timers(directory: &TempDir) -> Result<()> {
+pub(super) fn check_without_default_features(directory: &TempDir) -> Result<()> {
     let output = support::cargo(directory)
         .args([
             "check",

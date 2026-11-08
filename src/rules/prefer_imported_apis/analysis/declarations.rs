@@ -104,13 +104,29 @@ pub(super) fn reusable(
 ) -> bool {
     for scope in access.ancestors().filter(crate::syntax::is_scope) {
         if scope.children().any(|item| {
+            let conditional = item
+                .ancestors()
+                .take_while(|node| node != &scope)
+                .any(|node| super::targets::has_cfg(&node));
+
+            if conditional
+                && item.kind() == K::USE
+                && item
+                    .descendants()
+                    .filter_map(ast::UseTree::cast)
+                    .any(|tree| tree.star_token().is_some())
+            {
+                return true;
+            }
+
             declares(&item, &binding.name, binding.namespace)
-                && !imports.iter().any(|import| {
-                    import.declaration == item.text_range()
-                        && Some(import.definition) == binding.definition
-                        && import.name == binding.name
-                        && import.namespace == binding.namespace
-                })
+                && (conditional
+                    || !imports.iter().any(|import| {
+                        import.declaration == item.text_range()
+                            && Some(import.definition) == binding.definition
+                            && import.name == binding.name
+                            && import.namespace == binding.namespace
+                    }))
         }) {
             return false;
         }

@@ -125,7 +125,6 @@ pub(super) fn decide(
         return Decision::Skip;
     };
 
-    let target = targets::target(&access.node);
     let full_path = access.api.full_path();
     let fallback = || {
         if root_available(access, &binding, &module, imports, checks) {
@@ -135,11 +134,7 @@ pub(super) fn decide(
         }
     };
 
-    let Some(target) = target else {
-        return fallback();
-    };
-
-    let request = |reuse| NameRequest {
+    let request = |target: &SyntaxNode, reuse| NameRequest {
         fact: access.fact,
         at: access.range,
         name: &binding.name,
@@ -152,17 +147,21 @@ pub(super) fn decide(
         covered,
     };
 
-    if declarations::reusable(&access.node, &module, &binding, imports) && (checks.name)(request(true)) {
+    if declarations::reusable(&access.node, &module, &binding, imports) && (checks.name)(request(&module, true)) {
         return Decision::Canonical {
             replacement: access.api.canonical(),
             import: None,
         };
     }
 
+    let Some(target) = targets::target(&access.node) else {
+        return fallback();
+    };
+
     if binding.external
         || !root_available(access, &binding, &target, imports, checks)
         || !declarations::vacant(&target, &binding.name, binding.namespace)
-        || !(checks.name)(request(false))
+        || !(checks.name)(request(&target, false))
     {
         return fallback();
     }

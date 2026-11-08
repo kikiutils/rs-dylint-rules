@@ -211,7 +211,7 @@ fn macro_arguments_keep_full_paths_under_call_site_cfg_statements() -> Result<()
 
     let directory = support::fixture(source, &support::timers_feature())?;
     support::clean(&directory)?;
-    support::check_without_timers(&directory)
+    support::check_without_default_features(&directory)
 }
 
 #[test]

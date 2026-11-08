@@ -189,6 +189,7 @@ fn fail() -> AnyhowResult<()> { // 改用 Result<()>，必要時新增 use anyho
 
 - 回報與修正共用 `decide(access)`：規定形式 `Canonical`、不插入 import 的完整路徑 `FullPath`、不修的 `Skip`。符合決策的使用點不再回報；同一位置修正後再次分析應為零 issue。
 - 只改使用點、只新增 `use 路徑;` 或 `use 路徑 as 別名;`；既有 `use` 一律不碰。unused import 交給 rustc，排序、合併與排版交給其他規則及 rustfmt。
+- 先獨立檢查能否安全重用使用點可見的既有 binding；即使 cfg 邊界內沒有 import 插入位置，仍可重用。既有 import 宣告本身或其到所在 scope 之間帶有 `#[cfg]` 時不重用，不以本次編譯可見性推論其他設定也安全。所在 scope 有帶 `#[cfg]` 的 glob import 時，亦保守停用名稱重用；此限制不追溯 scope 外的 cfg（例如 tests module 上的 cfg）。只有需要新增 import 時才選擇 target。
 - target 通常是所在檔案或 inline module，沒有 cfg 的函式內使用亦提升到 module。遇到最近的 `#[cfg]` 邊界時，取邊界內包含使用點的最外層函式本體或 block：cfg fn 取本體，cfg block 取該 block，cfg impl／trait 取所在方法本體；沒有 block（例如 initializer 不是 block 的 cfg let）則退回完整路徑。`cfg_attr` 不算此邊界。
 - 固定插在 target 開頭（檔頭或 `{` 之後），僅略過開頭的 inner attributes／inner docs。不分析既有 use 排列，不拆開 item 與其前導註解。同 target 的多條 imports 合併為一筆插入。
 - 新增或重用名稱前，驗證同 namespace 的定義（CST 所有 cfg 分支及 compiler 展開產物）、整個 target 與 `use super::*` 子 module 的既有引用，以及使用點和 target 間更近的 item／use、generic、let 與 macro 遮蔽。來源 crate root 必須對應 extern prelude 的直接依賴（可透過已解析、指向該直接依賴的本地 crate alias），且未被其他本地同名定義遮蔽；不安全則退回完整路徑，連 root 都不安全則不修。
