@@ -1,3 +1,5 @@
+use std::process;
+
 use anyhow::Result;
 
 mod support;
@@ -20,7 +22,7 @@ fn inline_module_diagnostics_match_when_rules_are_enabled_together() -> Result<(
     for lint in support::LINTS {
         let single = support::run(&directory, false, lint)?;
         assert!(single.status.success(), "{single:?}");
-        let signature = |output: &std::process::Output| {
+        let signature = |output: &process::Output| {
             support::diagnostics(output, lint)
                 .into_iter()
                 .map(|message| {

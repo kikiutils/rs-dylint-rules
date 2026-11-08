@@ -7,11 +7,24 @@ use super::{
 const PRELUDE: &[&str] = &["drop", "size_of", "size_of_val", "align_of", "align_of_val"];
 
 pub(super) const FAMILIES: &[Family] = &[
-    Family::qualified("std::process", "std::process", "process", Members::Functions(&[])),
+    Family::qualified(
+        "std::process",
+        "std::process",
+        "process",
+        Members::Owned { constants: false },
+    ),
     Family::qualified("std::env", "std::env", "env", Members::Functions(&[])),
     Family::qualified("std::mem", "std::mem", "mem", Members::Functions(PRELUDE)),
     Family::qualified("std::ptr", "std::ptr", "ptr", Members::Functions(&[])),
     Family::qualified("std::thread", "std::thread", "thread", Members::Functions(&[])),
+    Family::qualified(
+        "std::thread",
+        "std::thread",
+        "thread",
+        Members::Named(&["JoinHandle", "Builder"]),
+    ),
+    Family::qualified("std::sync", "std", "std", Members::Named(&["Mutex", "RwLock"])),
+    Family::qualified("std::time", "std", "std", Members::Named(&["Instant"])),
     Family::qualified("std::io", "std::io", "io", Members::Functions(&[])),
     Family::qualified(
         "std::io",

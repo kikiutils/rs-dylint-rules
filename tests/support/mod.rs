@@ -1,10 +1,7 @@
 // Each integration test binary uses a subset of these shared fixture helpers.
 #![allow(dead_code)]
 
-use std::process::{
-    Command,
-    Output,
-};
+use std::process;
 
 use anyhow::Result;
 use pathkit::{
@@ -45,8 +42,8 @@ pub(crate) fn fixture_with(source: &str, files: &[(&str, &str)]) -> Result<TempD
     Ok(directory)
 }
 
-pub(crate) fn cargo(directory: &TempDir) -> Command {
-    let mut command = Command::new("cargo");
+pub(crate) fn cargo(directory: &TempDir) -> process::Command {
+    let mut command = process::Command::new("cargo");
     let target = path!(env!("CARGO_MANIFEST_DIR")) / "target" / "dylint-fixtures";
     // Fixtures live outside the repository; inherit its toolchain explicitly.
     command
@@ -67,15 +64,20 @@ pub(crate) fn behavior(directory: &TempDir) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> Result<Output> {
+pub(crate) fn run(directory: &TempDir, fix: bool, lint: &str) -> Result<process::Output> {
     run_lints(directory, fix, &[lint])
 }
 
-pub(crate) fn run_lints(directory: &TempDir, fix: bool, lints: &[&str]) -> Result<Output> {
+pub(crate) fn run_lints(directory: &TempDir, fix: bool, lints: &[&str]) -> Result<process::Output> {
     run_with_args(directory, fix, lints, &["--lib"])
 }
 
-pub(crate) fn run_with_args(directory: &TempDir, fix: bool, lints: &[&str], targets: &[&str]) -> Result<Output> {
+pub(crate) fn run_with_args(
+    directory: &TempDir,
+    fix: bool,
+    lints: &[&str],
+    targets: &[&str],
+) -> Result<process::Output> {
     let mut command = cargo(directory);
     // Allow every kiki lint, then warn only the requested ones.
     let flags = std::iter::once("-A unused".to_owned())
@@ -107,7 +109,7 @@ pub(crate) fn run_with_args(directory: &TempDir, fix: bool, lints: &[&str], targ
     Ok(command.output()?)
 }
 
-pub(crate) fn messages(output: &Output) -> Vec<serde_json::Value> {
+pub(crate) fn messages(output: &process::Output) -> Vec<serde_json::Value> {
     String::from_utf8_lossy(&output.stdout)
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
@@ -115,14 +117,14 @@ pub(crate) fn messages(output: &Output) -> Vec<serde_json::Value> {
         .collect()
 }
 
-pub(crate) fn diagnostics(output: &Output, lint: &str) -> Vec<serde_json::Value> {
+pub(crate) fn diagnostics(output: &process::Output, lint: &str) -> Vec<serde_json::Value> {
     messages(output)
         .into_iter()
         .filter(|message| message["message"]["code"]["code"] == lint)
         .collect()
 }
 
-pub(crate) fn has_lint(output: &Output, lint: &str) -> bool {
+pub(crate) fn has_lint(output: &process::Output, lint: &str) -> bool {
     !diagnostics(output, lint).is_empty()
 }
 

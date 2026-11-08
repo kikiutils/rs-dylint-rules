@@ -25,6 +25,7 @@ pub fn json() -> json::Result<json::Value> {
     json::from_str(&text)
 }
 pub fn map(_: Option<json::Error>) -> json::Map<String, json::Value> { json::Map::new() }
+pub fn number() -> json::Number { json::Number::from(7u8) }
 ";
 
     let (_, fixed) = support::fixed(

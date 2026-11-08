@@ -57,18 +57,23 @@ pub fn error() -> anyhow::Error { anyhow::Error::msg("example") }
 #[test]
 fn accepts_extern_crate_aliases_used_only_by_unmanaged_apis() -> Result<()> {
     support::accepted(
-        r#"extern crate std as standard;
-pub fn command() -> standard::process::Command { standard::process::Command::new("example") }
-"#,
+        r"extern crate std as standard;
+pub fn map() -> standard::collections::BTreeMap<u8, u8> { standard::collections::BTreeMap::new() }
+",
         "",
     )
 }
 
 #[test]
 fn private_alias_uses_are_rewritten_without_changing_grouped_imports() -> Result<()> {
-    let source = "use serde_json::{Value as JsonValue,\n    // Numeric helper stays imported.\n    Number};\npub fn value(_: JsonValue, _: Number) {}\n";
+    let source = "use serde_json::{Value as JsonValue,\n    // Number import comment.\n    Number};\npub fn value(_: JsonValue, _: Number) {}\n";
     let (_, fixed) = support::fixed(source, "serde_json=\"=1.0.154\"")?;
-    assert_eq!(fixed, source.replace("_: JsonValue", "_: serde_json::Value"));
+    assert_eq!(
+        fixed,
+        source
+            .replace("_: JsonValue", "_: serde_json::Value")
+            .replace("_: Number", "_: serde_json::Number")
+    );
 
     Ok(())
 }

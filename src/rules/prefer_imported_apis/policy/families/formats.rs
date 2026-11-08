@@ -30,6 +30,7 @@ pub(super) const FAMILIES: &[Family] = &[
             "to_value",
             "Value",
             "Map",
+            "Number",
             "Error",
             "Result",
         ]),

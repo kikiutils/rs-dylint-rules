@@ -52,8 +52,11 @@ pub fn prelude() {
     assert_eq!(
         fixed,
         format!(
-            "use std::io;\nuse std::fmt;\n{}",
-            source.replace("std::io::", "io::").replace("std::fmt::", "fmt::")
+            "use std::io;\nuse std::fmt;\nuse std::process;\n{}",
+            source
+                .replace("std::io::", "io::")
+                .replace("std::fmt::", "fmt::")
+                .replace("proc::", "process::")
         )
     );
 
@@ -63,13 +66,13 @@ pub fn prelude() {
 #[test]
 fn accepts_canonical_standard_paths_and_unmanaged_module_aliases() -> Result<()> {
     support::accepted(
-        r#"use std::{io, process, mem};
+        r"use std::{io, process, mem};
 use std::process as command_process;
 pub fn result() -> io::Result<()> { Ok(()) }
 pub fn id() -> u32 { process::id() }
 pub fn replace(value: &mut u8) -> u8 { mem::replace(value, 1) }
-pub fn command() -> command_process::Command { command_process::Command::new("example") }
-"#,
+pub fn termination<T: command_process::Termination>(value: T) { let _ = value.report(); }
+",
         "",
     )
 }

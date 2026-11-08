@@ -1,6 +1,7 @@
 mod anyhow;
 mod confique;
 mod formats;
+mod parking_lot;
 mod platform;
 mod rusqlite;
 mod standard;
@@ -54,6 +55,7 @@ pub(super) fn all() -> impl Iterator<Item = &'static Family> {
         .chain(rusqlite::FAMILIES)
         .chain(confique::FAMILIES)
         .chain(tokio::FAMILIES)
+        .chain(parking_lot::FAMILIES)
         .chain(tracing::FAMILIES)
         .chain(platform::FAMILIES)
 }
