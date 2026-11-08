@@ -28,6 +28,7 @@ pub(super) enum Group {
 pub(super) struct Entry {
     pub(super) node: SyntaxNode,
     pub(super) group: Group,
+    active: bool,
 }
 
 // Resolution and activation come from the compiler; ordering uses original CST nodes.
@@ -57,9 +58,7 @@ fn check_scope(
     let mut uncertain = false;
 
     for node in scope.children() {
-        if !is_active(&node) {
-            continue;
-        }
+        let active = is_active(&node);
 
         if let Some(import) = ast::Use::cast(node.clone()) {
             let Some(tree) = import.use_tree() else {
@@ -69,6 +68,10 @@ fn check_scope(
             let mut groups = Vec::new();
             let complete = collect_groups(&tree, resolve, &mut groups);
             let Some(&group) = groups.first().filter(|_| complete) else {
+                if !active {
+                    continue;
+                }
+
                 uncertain = true;
                 output.report(Diagnostic {
                     range: node.text_range(),
@@ -79,8 +82,12 @@ fn check_scope(
             };
 
             if groups.iter().all(|other| *other == group) {
-                entries.push(Entry { node, group });
+                entries.push(Entry { node, group, active });
             } else {
+                if !active {
+                    continue;
+                }
+
                 uncertain = true;
                 output.report(Diagnostic {
                     range: node.text_range(),
@@ -93,6 +100,7 @@ fn check_scope(
             entries.push(Entry {
                 node,
                 group: Group::Module,
+                active,
             });
         }
     }
@@ -101,14 +109,16 @@ fn check_scope(
     let mut violations = Vec::new();
 
     for entry in &entries {
-        if entry.group < highest {
+        if entry.active && entry.group < highest {
             violations.push(Diagnostic {
                 range: entry.node.text_range(),
                 message: "expected external imports, then external mod declarations, then local imports".to_owned(),
             });
         }
 
-        highest = highest.max(entry.group);
+        if entry.active {
+            highest = highest.max(entry.group);
+        }
     }
 
     if violations.is_empty() {

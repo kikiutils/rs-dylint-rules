@@ -16,6 +16,7 @@ fn resolved_derive(path: &str) -> Option<&'static Derive> {
         let krate = match prefix {
             "derive_more" => "derive_more_impl",
             "strum" => "strum_macros",
+            "thiserror" => "thiserror_impl",
             "core::cmp" => "core",
             _ => return None,
         };
@@ -249,4 +250,16 @@ fn shared_sort_keys_preserve_order_and_do_not_repeat_names_in_messages() {
         analysis::groups_message(),
         "Debug, Display, Error; Clone, Copy; Default, Constructor; PartialEq, Eq, PartialOrd, Ord, Hash; Serialize, Serialize_repr, Deserialize, Deserialize_repr; IsEmpty, IsVariant, EnumIs; EnumCount, VariantNames, VariantArray, EnumProperty, EnumMessage; From, TryFrom, FromStr, EnumString, FromRepr; AsRef, AsRefStr, AsMut, Deref, DerefMut, Index, IndexMut; Unwrap, TryUnwrap, EnumTryAs; IntoIterator, EnumIter"
     );
+}
+
+#[test]
+fn thiserror_uses_shared_helpers_without_loosening_other_derive_identities() {
+    let source = "#[derive(thiserror::Error, Debug)] #[error(\"example\")] struct Failure;";
+    assert_eq!(
+        apply(source, &check(source)),
+        source.replace("thiserror::Error, Debug", "Debug, thiserror::Error")
+    );
+
+    let source = "#[derive(derive_more::Error, Debug)] #[source] struct Failure;";
+    assert_eq!(apply(source, &check(source)), source);
 }

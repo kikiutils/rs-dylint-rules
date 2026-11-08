@@ -53,7 +53,7 @@ pub fn error() -> anyhow::Error { anyhow::anyhow!("conditional") }
     let (_, fixed) = support::fixed(source, &dependencies)?;
     assert_eq!(
         fixed,
-        source.replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
+        source.replace("{ anyhow::anyhow!", "{ use anyhow::anyhow;\nanyhow!")
     );
 
     Ok(())
@@ -62,7 +62,7 @@ pub fn error() -> anyhow::Error { anyhow::anyhow!("conditional") }
 #[test]
 fn fixes_original_function_bodies_wrapped_by_tokio_main() -> Result<()> {
     let dependencies = format!(
-        "{}\ntokio={{version=\"{}\",features=[\"rt\",\"time\",\"macros\"]}}",
+        "{}\ntokio={{version=\"{}\",features=[\"rt\",\"macros\"]}}",
         support::anyhow(),
         support::TOKIO_VERSION
     );
@@ -74,7 +74,7 @@ pub async fn error() -> anyhow::Error { anyhow::anyhow!("example") }
     let (_, fixed) = support::fixed(source, &dependencies)?;
     assert_eq!(
         fixed,
-        source.replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
+        source.replace("{ anyhow::anyhow!", "{ use anyhow::anyhow;\nanyhow!")
     );
 
     Ok(())
@@ -105,4 +105,39 @@ pub fn active() {}
 ",
         "",
     )
+}
+
+#[test]
+fn known_derives_and_helpers_allow_type_path_and_result_replacements() -> Result<()> {
+    let source = r#"use std::result::Result;
+use serde_json::Value;
+use anyhow::Error as AnyhowError;
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Record { pub value: Option<Value> }
+#[cfg_attr(feature="serde", derive(serde::Serialize))]
+#[cfg_attr(feature="serde", serde(rename_all = "camelCase"))]
+pub struct Response { pub value: Result<(), u8> }
+#[derive(Debug, thiserror::Error)]
+#[error("query failed: {0}")]
+pub struct QueryError(AnyhowError);
+"#;
+
+    let dependencies = format!(
+        "{}\nserde={{version=\"=1.0.229\",optional=true,features=[\"derive\"]}}\nserde_json=\"=1.0.154\"\nthiserror=\"=2.0.21\"\n\n[features]\ndefault=[\"serde\"]\nserde=[\"dep:serde\"]",
+        support::anyhow()
+    );
+
+    let (_, fixed) = support::fixed(source, &dependencies)?;
+    assert_eq!(
+        fixed,
+        source
+            .replace("use std::result::Result;", "use anyhow::Result;\n")
+            .replace("use serde_json::Value;\n", "")
+            .replace("use anyhow::Error as AnyhowError;\n", "")
+            .replace("Option<Value>", "Option<serde_json::Value>")
+            .replace("QueryError(AnyhowError)", "QueryError(anyhow::Error)")
+    );
+
+    Ok(())
 }

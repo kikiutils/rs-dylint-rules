@@ -3,15 +3,22 @@ use rustc_hir::def::{
     DefKind,
     Res,
 };
-use rustc_lint::LateContext;
-use rustc_span::def_id::{
-    CRATE_DEF_INDEX,
-    DefId,
+use rustc_lint::{
+    LateContext,
+    LintContext,
+};
+use rustc_span::{
+    def_id::{
+        CRATE_DEF_INDEX,
+        DefId,
+    },
+    sym,
 };
 
 use super::{
     Api,
     Form,
+    ImportTarget,
     Qualifier,
     families::{
         self,
@@ -22,8 +29,13 @@ use super::{
 
 #[derive(Default)]
 pub(in super::super) struct Catalog {
-    apis: FxHashMap<DefId, Api>,
+    apis: FxHashMap<DefId, Selection>,
     qualifiers: FxHashMap<DefId, Qualifier>,
+}
+
+struct Selection {
+    priority: u8,
+    api: Option<Api>,
 }
 
 impl Catalog {
@@ -48,15 +60,82 @@ impl Catalog {
             }
         }
 
+        for api in catalog.apis.values().filter_map(|selection| selection.api.as_ref()) {
+            if let Form::Qualified { qualifier, .. } = &api.form {
+                catalog.qualifiers.insert(qualifier.definition, qualifier.clone());
+            }
+        }
+
+        catalog.standard_result(cx);
+
         catalog
     }
 
     pub(in super::super) fn api(&self, definition: DefId) -> Option<&Api> {
-        self.apis.get(&definition)
+        self.apis.get(&definition)?.api.as_ref()
     }
 
     pub(in super::super) fn qualifier(&self, definition: DefId) -> Option<&Qualifier> {
         self.qualifiers.get(&definition)
+    }
+
+    fn standard_result(&mut self, cx: &LateContext<'_>) {
+        let Some(definition) = cx.tcx.get_diagnostic_item(sym::Result) else {
+            return;
+        };
+
+        let targets: Vec<_> = self
+            .apis
+            .values()
+            .filter_map(|selection| selection.api.as_ref())
+            .filter_map(|api| {
+                let root = DefId {
+                    krate: api.definition.krate,
+                    index: CRATE_DEF_INDEX,
+                };
+
+                (api.name == "Result"
+                    && matches!(api.form, Form::Direct)
+                    && cx.tcx.crate_name(root.krate).as_str() == "anyhow")
+                    .then_some(ImportTarget {
+                        source: "anyhow::Result",
+                        definition: Some(api.definition),
+                        root: Some(root),
+                    })
+            })
+            .collect();
+
+        let target = targets
+            .iter()
+            .find(|target| {
+                target
+                    .root
+                    .is_some_and(|root| super::super::names::external_crate(cx, "anyhow", root))
+            })
+            .cloned()
+            .or_else(|| (targets.len() == 1).then(|| targets[0].clone()))
+            .or_else(|| {
+                cx.sess()
+                    .opts
+                    .externs
+                    .get("anyhow")
+                    .filter(|entry| entry.add_prelude)
+                    .map(|_| ImportTarget {
+                        source: "anyhow::Result",
+                        definition: None,
+                        root: None,
+                    })
+            });
+
+        self.select(
+            Api {
+                definition,
+                name: "Result".to_owned(),
+                namespace: rustc_hir::def::Namespace::TypeNS,
+                form: Form::Replace { target },
+            },
+            0,
+        );
     }
 
     fn family(&mut self, cx: &LateContext<'_>, root: DefId, family: &Family) {
@@ -78,18 +157,18 @@ impl Catalog {
                     external: !source.contains("::"),
                 };
 
-                self.qualifiers.entry(definition).or_insert_with(|| qualifier.clone());
                 Some(qualifier)
             },
             None => None,
         };
 
-        self.members(cx, module, family, qualifier.as_ref(), "");
+        self.members(cx, root, module, family, qualifier.as_ref(), "");
     }
 
     fn members(
         &mut self,
         cx: &LateContext<'_>,
+        root: DefId,
         module: DefId,
         family: &Family,
         qualifier: Option<&Qualifier>,
@@ -106,7 +185,7 @@ impl Catalog {
 
             let name = child.ident.name.as_str();
             if matches!(family.members, Members::Channel) && kind == DefKind::Mod && name == "error" {
-                self.members(cx, definition, family, qualifier, "error::");
+                self.members(cx, root, definition, family, qualifier, "error::");
                 continue;
             }
 
@@ -117,6 +196,13 @@ impl Catalog {
                     kind,
                     DefKind::Fn | DefKind::Struct | DefKind::Enum | DefKind::Union | DefKind::TyAlias
                 ),
+                Members::Owned { constants } => {
+                    definition.krate == root.krate
+                        && (matches!(
+                            kind,
+                            DefKind::Fn | DefKind::Struct | DefKind::Enum | DefKind::Union | DefKind::TyAlias
+                        ) || (constants && kind == DefKind::Const))
+                },
             };
 
             if !selected {
@@ -143,15 +229,33 @@ impl Catalog {
                 }
             });
 
-            // Earlier public routes win, so a reexport keeps its short canonical
-            // spelling rather than being replaced by an implementation route.
-            self.apis.entry(definition).or_insert_with(|| Api {
+            let api = Api {
                 definition,
                 name: name.to_owned(),
                 namespace,
                 form,
-            });
+            };
+
+            self.select(api, family.priority);
         }
+    }
+
+    fn select(&mut self, api: Api, priority: u8) {
+        self.apis
+            .entry(api.definition)
+            .and_modify(|selected| {
+                if priority < selected.priority {
+                    selected.priority = priority;
+                    selected.api = Some(api.clone());
+                } else if priority == selected.priority && selected.api.as_ref() != Some(&api) {
+                    // Ambiguous policies must never depend on family iteration order.
+                    selected.api = None;
+                }
+            })
+            .or_insert(Selection {
+                priority,
+                api: Some(api),
+            });
     }
 }
 
@@ -171,4 +275,67 @@ fn resolve(cx: &LateContext<'_>, root: DefId, path: &str) -> Option<DefId> {
     }
 
     Some(definition)
+}
+
+#[cfg(test)]
+mod tests {
+    use rustc_hir::def::Namespace;
+    use rustc_span::def_id::LOCAL_CRATE;
+
+    use super::*;
+
+    fn api(source: &'static str) -> Api {
+        let definition = DefId {
+            krate: LOCAL_CRATE,
+            index: CRATE_DEF_INDEX,
+        };
+
+        Api {
+            definition,
+            name: "take".to_owned(),
+            namespace: Namespace::ValueNS,
+            form: Form::Qualified {
+                qualifier: Qualifier {
+                    source,
+                    name: "mem",
+                    definition,
+                    root: definition,
+                    external: false,
+                },
+                member: "take".to_owned(),
+            },
+        }
+    }
+
+    #[test]
+    fn canonical_routes_use_explicit_priority_not_insertion_order() {
+        for reversed in [false, true] {
+            let mut catalog = Catalog::default();
+            let mut entries = vec![(api("std::mem"), 0), (api("core::mem"), 1)];
+            if reversed {
+                entries.reverse();
+            }
+
+            for (api, priority) in entries {
+                catalog.select(api, priority);
+            }
+
+            assert_eq!(
+                catalog
+                    .api(api("std::mem").definition)
+                    .and_then(Api::full_path)
+                    .as_deref(),
+                Some("std::mem::take")
+            );
+        }
+    }
+
+    #[test]
+    fn conflicting_policies_are_not_resolved_by_insertion_order() {
+        let mut catalog = Catalog::default();
+        let first = api("one::mem");
+        catalog.select(first.clone(), 0);
+        catalog.select(api("two::mem"), 0);
+        assert!(catalog.api(first.definition).is_none());
+    }
 }

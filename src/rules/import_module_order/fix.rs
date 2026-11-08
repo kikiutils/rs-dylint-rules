@@ -35,8 +35,8 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
         return None;
     }
 
-    // Comments inside a use declaration move with its unchanged text. Attributes and
-    // other comments remain barriers because their ownership may be unclear.
+    // Comments inside a use declaration and movable attributes keep their original
+    // text. Other comments and attributes remain ownership or ordering barriers.
     if scope.descendants_with_tokens().any(|element| {
         if range.intersect(element.text_range()).is_none() {
             return false;
@@ -48,7 +48,11 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
                 .find_map(ast::Use::cast)
                 .and_then(|import| declaration_range(&import))
                 .is_some_and(|range| range.contains_range(element.text_range())),
-            kind => ast::AnyAttr::can_cast(kind),
+            SyntaxKind::ATTR => ast::Attr::cast(element.into_node().unwrap_or_else(|| unreachable!()))
+                .and_then(|attribute| attribute.meta())
+                .is_none_or(|meta| !movable_meta(meta)),
+            SyntaxKind::DOC_COMMENT => true,
+            _ => false,
         }
     }) {
         return None;
@@ -92,6 +96,17 @@ pub(super) fn reorder(scope: &SyntaxNode, entries: &[Entry]) -> Option<Edit> {
     }
 
     Some(Edit { range, replacement })
+}
+
+// Keep activation and lint scope attached to the declaration. Attributes such
+// as macro_use or unknown macros can affect later items, so they remain barriers.
+fn movable_meta(meta: ast::Meta) -> bool {
+    if let ast::Meta::CfgAttrMeta(cfg) = meta {
+        return cfg.metas().all(movable_meta);
+    }
+
+    meta.simple_name()
+        .is_some_and(|name| matches!(name.as_str(), "cfg" | "allow" | "warn" | "deny" | "forbid"))
 }
 
 // Leading comments and attributes belong to the item node but stay outside the moved declaration.

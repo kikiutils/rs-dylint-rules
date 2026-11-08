@@ -23,7 +23,7 @@ fn macro_expression_paths_keep_generic_suffixes_and_original_offsets() {
     let output = analyze(source, &facts, true);
     assert_eq!(
         apply(source, &output),
-        "fn run() { \nuse std::ptr;\nvec![ptr::null::<u8>(); 2]; }\n"
+        "fn run() { use std::ptr;\nvec![ptr::null::<u8>(); 2]; }\n"
     );
 }
 
@@ -32,11 +32,11 @@ fn nested_macro_inputs_are_read_from_rust_expressions() {
     for (source, expected) in [
         (
             "fn run() { format!(\"{}\", dbg!(tokio::time::sleep())); }\n",
-            "fn run() { \nuse tokio::time::sleep;\nformat!(\"{}\", dbg!(sleep())); }\n",
+            "fn run() { use tokio::time::sleep;\nformat!(\"{}\", dbg!(sleep())); }\n",
         ),
         (
             "fn run() { vec![tokio::time::sleep(duration)]; }\n",
-            "fn run() { \nuse tokio::time::sleep;\nvec![sleep(duration)]; }\n",
+            "fn run() { use tokio::time::sleep;\nvec![sleep(duration)]; }\n",
         ),
     ] {
         let facts = [(

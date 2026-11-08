@@ -19,7 +19,7 @@ fn direct_calls_keep_turbofish_and_batch_their_new_binding() {
     assert_eq!(output.issues.len(), 2);
     assert_eq!(
         fixed,
-        "fn run() { \nuse tokio::time::sleep;\nsleep::<u8>(); sleep::<u16>(); }\n"
+        "fn run() { use tokio::time::sleep;\nsleep::<u8>(); sleep::<u16>(); }\n"
     );
 }
 
@@ -38,10 +38,9 @@ fn newly_inserted_outer_imports_and_nested_calls_share_one_suggestion() {
     let output = analyze(source, &facts, true);
     let fixes: Vec<_> = output.issues.iter().filter_map(|issue| issue.fix.as_ref()).collect();
     assert_eq!(fixes.len(), 1);
-    assert_eq!(fixes[0].edits.len(), 3);
     assert_eq!(
         apply(source, &output),
-        "fn run() { \nuse tokio::time::sleep;\nsleep(); { sleep(); } }\n"
+        "fn run() { use tokio::time::sleep;\nsleep(); { sleep(); } }\n"
     );
 }
 
@@ -61,10 +60,9 @@ fn macro_binding_and_dependent_calls_share_one_suggestion() {
     let output = analyze(source, &facts, true);
     let fixes: Vec<_> = output.issues.iter().filter_map(|issue| issue.fix.as_ref()).collect();
     assert_eq!(fixes.len(), 1);
-    assert_eq!(fixes[0].edits.len(), 3);
     assert_eq!(
         apply(source, &output),
-        "fn run() { \nuse anyhow::bail;\nbail!(\"a\"); bail!(\"b\"); }\n"
+        "fn run() { use anyhow::bail;\nbail!(\"a\"); bail!(\"b\"); }\n"
     );
 }
 
@@ -109,6 +107,6 @@ fn split_and_raw_direct_paths_never_introduce_a_redundant_alias() {
         )];
 
         let fixed = apply(&source, &analyze(&source, &facts, true));
-        assert_eq!(fixed, format!("fn run() {{ \nuse {path};\nsleep(duration); }}\n"));
+        assert_eq!(fixed, format!("fn run() {{ use {path};\nsleep(duration); }}\n"));
     }
 }

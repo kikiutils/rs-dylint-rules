@@ -18,7 +18,9 @@ use rustc_span::{
 };
 
 mod accesses;
+mod derives;
 mod imports;
+mod index;
 
 use super::{
     analysis,
@@ -40,6 +42,7 @@ use crate::{
 pub(crate) struct Collector {
     catalog: OnceCell<Catalog>,
     facts: Facts<Event>,
+    derives: Facts<&'static [&'static str]>,
     names: Names,
     macro_calls: FxHashSet<ExpnId>,
 }
@@ -71,6 +74,8 @@ impl Collector {
         workspace: &mut Workspace,
         item: &'tcx hir::Item<'tcx>,
     ) {
+        self.expansion_paths(cx, workspace, item.span, item.hir_id());
+        self.derive(cx, workspace, item);
         if !matches!(item.kind, hir::ItemKind::ExternCrate(..))
             && let Some(ident) = item.kind.ident()
         {
@@ -163,24 +168,48 @@ impl Collector {
         workspace: &Workspace,
     ) -> RuleOutput {
         let facts: Vec<_> = self.facts.file(path, &workspace.modules).collect();
+        let index = index::FactIndex::new(&facts);
+        let references: FxHashSet<_> = self.names.reference_ranges(cx, workspace, path).collect();
+        let derives = self.derives.resolved(path, &workspace.modules);
         analysis::analyze(
             source.parsed.syntax(),
             &source.text,
             source.edition,
-            facts.iter().map(|fact| (fact.range, &fact.value)),
-            |request| {
-                let range = facts
-                    .iter()
-                    .filter(|fact| fact.range.contains_range(request.at))
-                    .map(|fact| fact.range)
-                    .min_by_key(|range| range.len());
+            facts.iter().map(|fact| (fact.range, fact.id, &fact.value)),
+            &super::fix::Checks {
+                name: &|request| {
+                    let source_imports = request.replacement.as_ref().map_or(&[][..], |replacement| {
+                        index.source_imports(replacement.definition, request.name)
+                    });
 
-                range.is_some_and(|range| {
-                    facts
-                        .iter()
-                        .filter(|fact| fact.range == range)
-                        .all(|fact| self.names.safe(cx, workspace, path, fact.id, &request))
-                })
+                    let origins = index.origins(request.fact);
+                    !origins.is_empty()
+                        && origins
+                            .iter()
+                            .all(|&id| self.names.safe(cx, workspace, path, id, &request, source_imports))
+                },
+                remove: &|request| {
+                    let origins = index.import_origins(request.origin);
+                    !origins.is_empty()
+                        && origins.iter().all(|&origin| {
+                            self.names.removable(
+                                cx,
+                                workspace,
+                                path,
+                                &super::names::RemovalRequest { origin, ..request },
+                            )
+                        })
+                },
+                protected: &|node| {
+                    analysis::attributes::protected(node, &|range| derives.get(&range).copied().flatten())
+                },
+                reference: &|range| references.contains(&range),
+                depends: &|request| {
+                    index.import_origins(request.origin).iter().any(|&origin| {
+                        self.names
+                            .depends(cx, workspace, path, &super::names::RemovalRequest { origin, ..request })
+                    })
+                },
             },
         )
     }

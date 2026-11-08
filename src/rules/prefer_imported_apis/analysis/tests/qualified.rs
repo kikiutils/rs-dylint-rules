@@ -1,6 +1,68 @@
+use ra_ap_syntax::{
+    AstNode,
+    ast,
+};
 use rustc_hir::def::Namespace;
 
 use super::*;
+
+#[test]
+fn fallback_and_fix_reuse_the_nearest_visible_import() {
+    let source = "use std::io;\npub fn run() { use std::io; let _: std::io::Result<()> = Ok(()); }\n";
+    let root = parse(source);
+    let local = root
+        .descendants()
+        .find_map(ast::StmtList::cast)
+        .unwrap_or_else(|| panic!("missing local scope"));
+
+    let qualifier = qualifier("std::io", "io", false);
+    let mut facts: Vec<_> = ranges(source, "io;")
+        .map(|range| {
+            (
+                TextRange::new(range.start(), range.end() - TextSize::from(1)),
+                Event::NamespaceImport {
+                    qualifier: qualifier.clone(),
+                    name: "io".to_owned(),
+                    renamed: false,
+                },
+            )
+        })
+        .collect();
+
+    facts.push((
+        range(source, "std::io::Result"),
+        Event::Use {
+            api: api(
+                "Result",
+                Namespace::TypeNS,
+                Form::Qualified {
+                    qualifier,
+                    member: "Result".to_owned(),
+                },
+            ),
+            kind: UseKind::Path,
+        },
+    ));
+
+    let output = super::super::analyze(
+        &root,
+        source,
+        ra_ap_syntax::Edition::Edition2024,
+        facts
+            .iter()
+            .map(|(range, event)| (*range, rustc_hir::CRATE_HIR_ID, event)),
+        &super::super::super::fix::Checks {
+            name: &|request| request.name != "io" || request.target == local.syntax().text_range(),
+            remove: &|_| true,
+            reference: &|_| false,
+            depends: &|_| false,
+            protected: &crate::syntax::protected,
+        },
+    );
+
+    assert_eq!(output.issues.len(), 1);
+    assert_eq!(apply(source, &output), source.replace("std::io::Result", "io::Result"));
+}
 
 #[test]
 fn qualified_external_types_keep_generic_and_associated_suffixes() {
@@ -46,7 +108,7 @@ fn noncanonical_namespace_aliases_shorten_only_the_resolved_api_prefix() {
     )];
 
     let fixed = apply(source, &analyze(source, &facts, true));
-    assert_eq!(fixed, "fn run() { \nuse std::io;\nlet _: io::Result<u8> = Ok(0); }\n");
+    assert_eq!(fixed, "fn run() { use std::io;\nlet _: io::Result<u8> = Ok(0); }\n");
 }
 
 #[test]

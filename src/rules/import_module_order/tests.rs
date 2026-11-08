@@ -128,10 +128,11 @@ fn comments_unknown_attributes_and_intervening_items_block_edits() {
         "use crate::A; /* trailing */\nuse std::io;\n",
         "use crate::A;\nuse std::io; /* edge */\n",
         "use crate::A;\nmod /* module */ child;\nuse std::fmt;\n",
-        "use crate::A;\n#[allow(unused_imports)] use std::{/* inner */ io};\n",
         "use crate::A;\nfn unrelated() {}\nuse std::io;\n",
         "#![cfg_attr(any(), token_sensitive)]\nuse crate::A;\nuse std::io;\n",
         "#[token_sensitive] fn run() { use crate::A; use std::fmt; }\n",
+        "use crate::A;\n#[expect(unused_imports)] use std::io;\n",
+        "use crate::A;\n#[macro_use] mod child;\nuse std::io;\n",
     ] {
         let output = check(source);
         assert!(!output.issues.is_empty(), "{source}");
@@ -158,5 +159,21 @@ fn inactive_scopes_and_macro_tokens_are_skipped() {
     assert_eq!(
         check("macro_rules! generated { () => { use crate::A; use std::fmt; } }"),
         RuleOutput::default()
+    );
+}
+
+#[test]
+fn cfg_and_lint_attributes_move_with_their_declarations() {
+    let source = "use crate::A;\n#[cfg(unix)] mod linux;\n#[cfg(windows)] mod windows;\n#[allow(unused_imports)] use std::{/* inner */ io};\n";
+    let root = parse(source);
+    let output = analysis::analyze(
+        &root,
+        &|path| (path.syntax().text() == "std").then_some(Group::External),
+        &|node| !node.text().to_string().starts_with("#[cfg(windows)]"),
+    );
+
+    assert_eq!(
+        apply(source, &output),
+        "#[allow(unused_imports)] use std::{/* inner */ io};\n\n#[cfg(unix)] mod linux;\n#[cfg(windows)] mod windows;\n\nuse crate::A;\n"
     );
 }

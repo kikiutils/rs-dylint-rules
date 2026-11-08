@@ -13,31 +13,13 @@ use crate::{
     syntax,
 };
 
-pub(super) struct Insertion<'a> {
+pub(super) struct Insertion {
     offset: TextSize,
-    newline: &'static str,
-    indent: &'a str,
-    leading_newline: bool,
 }
 
-impl Insertion<'_> {
+impl Insertion {
     pub(super) fn edit<'a>(&self, statements: impl IntoIterator<Item = &'a str>) -> Edit {
-        let mut replacement = String::new();
-        if self.leading_newline {
-            replacement.push_str(self.newline);
-        }
-
-        for (index, statement) in statements.into_iter().enumerate() {
-            if index > 0 {
-                replacement.push_str(self.indent);
-            }
-
-            replacement.push_str(statement);
-            replacement.push_str(self.newline);
-        }
-
-        replacement.push_str(self.indent);
-
+        let replacement = statements.into_iter().flat_map(|statement| [statement, "\n"]).collect();
         Edit {
             range: TextRange::empty(self.offset),
             replacement,
@@ -45,7 +27,7 @@ impl Insertion<'_> {
     }
 }
 
-pub(super) fn insertion<'a>(scope: &SyntaxNode, source: &'a str) -> Option<Insertion<'a>> {
+pub(super) fn insertion(scope: &SyntaxNode, source: &str) -> Option<Insertion> {
     if !syntax::is_scope(scope) || syntax::protected(scope) {
         return None;
     }
@@ -119,22 +101,7 @@ pub(super) fn insertion<'a>(scope: &SyntaxNode, source: &'a str) -> Option<Inser
         offset
     };
 
-    let index = usize::from(offset);
-    let newline = if source.contains("\r\n") { "\r\n" } else { "\n" };
-    let line_start = source[..index].rfind('\n').map_or(0, |position| position + 1);
-    let prefix = &source[line_start..index];
-    let indent = if prefix.chars().all(|character| matches!(character, ' ' | '\t')) {
-        prefix
-    } else {
-        ""
-    };
-
-    Some(Insertion {
-        offset,
-        newline,
-        indent,
-        leading_newline: !file && !prefix.chars().all(|character| matches!(character, ' ' | '\t')),
-    })
+    Some(Insertion { offset })
 }
 
 #[cfg(test)]

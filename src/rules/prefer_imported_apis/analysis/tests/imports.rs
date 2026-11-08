@@ -73,5 +73,5 @@ fn repeated_canonical_accesses_report_a_redundant_namespace_import_once() {
         range(source, "std::process as process")
     );
 
-    assert_eq!(apply(source, &output), source);
+    assert_eq!(apply(source, &output), source.replace(" as process", ""));
 }

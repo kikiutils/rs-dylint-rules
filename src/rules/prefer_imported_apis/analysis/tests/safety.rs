@@ -65,43 +65,59 @@ fn file_banners_allow_both_external_reuse_and_new_namespace_imports() {
 }
 
 #[test]
-fn leaf_alias_uses_are_qualified_without_rewriting_the_import() {
-    let source = "use anyhow::Error as AnyhowError;\nfn run() { let _: Option<AnyhowError> = None; }\n";
-    let api = api(
-        "Error",
-        Namespace::TypeNS,
-        Form::Qualified {
-            qualifier: qualifier("anyhow", "anyhow", true),
-            member: "Error".to_owned(),
-        },
-    );
-
-    let import_range = range(source, "AnyhowError;");
-    let access_range = range(source, "AnyhowError>");
-    let facts = [
+fn leaf_alias_imports_and_uses_are_rewritten_together() {
+    for (suffix, removable) in [
+        ("", true),
+        (r#"const NAME: &str = "AnyhowError";"#, true),
+        ("#[cfg(any())] fn inactive(_: self::AnyhowError) {}", false),
+        ("#[cfg(any())] fn inactive(_: crate::AnyhowError) {}", false),
         (
-            TextRange::new(import_range.start(), import_range.end() - TextSize::from(1)),
-            Event::Import {
-                api: api.clone(),
-                name: "AnyhowError".to_owned(),
-                renamed: true,
-            },
+            r#"#[cfg_attr(any(), serde(with = "AnyhowError"))] struct Other;"#,
+            false,
         ),
-        (
-            TextRange::new(access_range.start(), access_range.end() - TextSize::from(1)),
-            Event::Use {
-                kind: UseKind::Path,
-                api,
-            },
-        ),
-    ];
+    ] {
+        let source =
+            format!("use anyhow::Error as AnyhowError;\nfn run() {{ let _: Option<AnyhowError> = None; }}\n{suffix}");
 
-    let output = analyze(source, &facts, true);
-    assert!(output.issues[0].fix.is_none());
-    assert_eq!(
-        apply(source, &output),
-        source.replace("Option<AnyhowError>", "Option<anyhow::Error>")
-    );
+        let api = api(
+            "Error",
+            Namespace::TypeNS,
+            Form::Qualified {
+                qualifier: qualifier("anyhow", "anyhow", true),
+                member: "Error".to_owned(),
+            },
+        );
+
+        let import_range = range(&source, "AnyhowError;");
+        let access_range = range(&source, "AnyhowError>");
+        let facts = [
+            (
+                TextRange::new(import_range.start(), import_range.end() - TextSize::from(1)),
+                Event::Import {
+                    api: api.clone(),
+                    name: "AnyhowError".to_owned(),
+                    renamed: true,
+                },
+            ),
+            (
+                TextRange::new(access_range.start(), access_range.end() - TextSize::from(1)),
+                Event::Use {
+                    kind: UseKind::Path,
+                    api,
+                },
+            ),
+        ];
+
+        let output = analyze(&source, &facts, true);
+        let expected = source.replace("Option<AnyhowError>", "Option<anyhow::Error>");
+        let expected = if removable {
+            expected.replace("use anyhow::Error as AnyhowError;", "")
+        } else {
+            expected
+        };
+
+        assert_eq!(apply(&source, &output), expected, "{suffix}");
+    }
 }
 
 #[test]

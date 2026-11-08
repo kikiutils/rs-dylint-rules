@@ -76,8 +76,9 @@ impl<'tcx> LateLintPass<'tcx> for KikiRules {
                 continue;
             };
 
-            let can_fix = self.workspace.modules.can_fix(path);
+            let semantic_can_fix = self.workspace.modules.can_fix(path);
             for rule in Rule::VARIANTS {
+                let can_fix = matches!(rule, Rule::StatementPadding) || semantic_can_fix;
                 rule.analyze(&self.collectors, cx, path, &source, &self.workspace)
                     .emit(cx, *rule, &source, can_fix);
             }

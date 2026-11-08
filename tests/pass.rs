@@ -49,20 +49,16 @@ fn combined_fixes_converge_and_are_idempotent() -> Result<()> {
     let fixed = support::source(&directory)?;
     assert_eq!(
         fixed,
-        concat!(
-            r#"pub mod nested {
+        r#"pub mod nested {
     use std::fmt;
 
 use self::Value as Local;
     #[derive(PartialEq, Eq)] pub struct Value;
 
-    pub fn error() -> anyhow::Error {"#,
-            " \n",
-            r#"use anyhow::anyhow;
+    pub fn error() -> anyhow::Error { use anyhow::anyhow;
 anyhow!("error") }
 }
 "#
-        )
     );
 
     let output = support::run_lints(&directory, false, support::LINTS)?;

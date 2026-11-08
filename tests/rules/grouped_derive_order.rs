@@ -99,6 +99,54 @@ pub enum State { Ready, Value(u32) }
 }
 
 #[test]
+fn thiserror_derives_preserve_display_conversions_and_sources() -> Result<()> {
+    let source = r#"#[derive(thiserror::Error, Debug)]
+pub enum Failure {
+    #[error("io failed: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("context: {source}")]
+    Context { #[source] source: std::io::Error },
+}
+#[derive(thiserror::Error, Debug)]
+#[error(transparent)]
+pub struct Wrapped(#[from] Failure);
+#[test] fn behavior() {
+    use std::error::Error;
+    let failure = Failure::from(std::io::Error::other("disk"));
+    assert_eq!(failure.to_string(), "io failed: disk");
+    assert_eq!(failure.source().unwrap().to_string(), "disk");
+    let wrapped = Wrapped::from(failure);
+    assert_eq!(wrapped.to_string(), "io failed: disk");
+    assert_eq!(wrapped.source().unwrap().to_string(), "disk");
+    let context = Failure::Context { source: std::io::Error::other("network") };
+    assert_eq!(context.to_string(), "context: network");
+    assert_eq!(context.source().unwrap().to_string(), "network");
+}
+"#;
+
+    let directory = support::fixture(source)?;
+    support::dependency(&directory, "thiserror=\"=2.0.21\"")?;
+
+    for fix in [false, true] {
+        let output = support::run(&directory, fix, "kiki_grouped_derive_order")?;
+        assert!(output.status.success(), "{output:?}");
+        if !fix {
+            assert_eq!(support::diagnostics(&output, "kiki_grouped_derive_order").len(), 2);
+        }
+
+        support::behavior(&directory)?;
+    }
+
+    let expected = source.replace("thiserror::Error, Debug", "Debug, thiserror::Error");
+    assert_eq!(support::source(&directory)?, expected);
+    let output = support::run(&directory, true, "kiki_grouped_derive_order")?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!support::has_lint(&output, "kiki_grouped_derive_order"), "{output:?}");
+    assert_eq!(support::source(&directory)?, expected);
+    Ok(())
+}
+
+#[test]
 fn supported_third_party_derives_preserve_behavior() -> Result<()> {
     let source = r#"use is_empty::IsEmpty as Empty;
 use serde_repr::{Deserialize_repr as Decode, Serialize_repr as Encode};

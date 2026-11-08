@@ -10,7 +10,10 @@ use ra_ap_syntax::{
 
 use super::{
     super::{
-        model::UseKind,
+        model::{
+            FactKey,
+            UseKind,
+        },
         policy::{
             Api,
             Form,
@@ -28,6 +31,7 @@ use crate::{
 };
 
 pub(in super::super) struct Access {
+    pub(in super::super) fact: FactKey,
     pub(in super::super) api: Api,
     pub(in super::super) range: TextRange,
     pub(in super::super) node: SyntaxNode,
@@ -39,13 +43,17 @@ pub(in super::super) struct Access {
 
 impl Access {
     pub(in super::super) fn is_canonical(&self) -> bool {
-        self.spelling == self.api.canonical()
+        !self.api.replaces_type() && self.spelling == self.api.canonical()
     }
 
     pub(in super::super) fn diagnostic(&self) -> Diagnostic {
         Diagnostic {
             range: self.range,
-            message: format!("use this API as `{}`", self.api.canonical()),
+            message: if self.api.replaces_type() {
+                "use imported `anyhow::Result` instead of the standard `Result`".to_owned()
+            } else {
+                format!("use this API as `{}`", self.api.canonical())
+            },
         }
     }
 }
@@ -57,6 +65,11 @@ pub(in super::super) fn read(
     kind: UseKind,
     edition: Edition,
 ) -> Option<Access> {
+    let fact = FactKey {
+        range,
+        definition: api.definition,
+    };
+
     let (node, range, spelling, conditional) = match kind {
         UseKind::Macro => {
             let start = TextRange::new(range.start(), range.start() + TextSize::from(1));
@@ -84,6 +97,7 @@ pub(in super::super) fn read(
     let scope = syntax::scope(&node)?;
     let conditional = conditional || syntax::crosses_conditional(&node, &scope);
     Some(Access {
+        fact,
         api,
         range,
         node,
@@ -102,6 +116,7 @@ pub(in super::super) fn check_import_order(
 ) {
     let (definition, name) = match &access.api.form {
         Form::Direct => (access.api.definition, access.api.name.as_str()),
+        Form::Replace { .. } => return,
         Form::Qualified { qualifier, .. } => (qualifier.definition, qualifier.name),
     };
 

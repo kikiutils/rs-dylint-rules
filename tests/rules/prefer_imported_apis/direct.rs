@@ -17,10 +17,7 @@ pub fn check(valid: bool) -> Result<String> {
         source
             .replace("anyhow::ensure!", "ensure!")
             .replace("anyhow::Context::", "Context::")
-            .replace(
-                "    ensure!",
-                "    use anyhow::ensure;\n    use anyhow::Context;\n    ensure!"
-            )
+            .replace("    ensure!", "    use anyhow::ensure;\nuse anyhow::Context;\nensure!")
     );
 
     Ok(())
@@ -39,7 +36,7 @@ pub fn result() -> anyhow::Result<()> { Ok(()) }
             "use anyhow::Result;\n{}",
             source
                 .replace("anyhow::Result<", "Result<")
-                .replace("{ anyhow::anyhow!", "{ \nuse anyhow::anyhow;\nanyhow!")
+                .replace("{ anyhow::anyhow!", "{ use anyhow::anyhow;\nanyhow!")
         )
     );
 
@@ -61,10 +58,7 @@ pub fn check(valid: bool) -> Result<()> {
         source
             .replace("anyhow::ensure!", "ensure!")
             .replace("anyhow::bail!", "bail!")
-            .replace(
-                "    ensure!",
-                "    use anyhow::ensure;\n    use anyhow::bail;\n    ensure!"
-            )
+            .replace("    ensure!", "    use anyhow::ensure;\nuse anyhow::bail;\nensure!")
     );
 
     Ok(())
@@ -82,8 +76,8 @@ pub fn after() -> Result<()> { ensure!(true); anyhow::bail!("after") }
     assert_eq!(
         fixed,
         source
-            .replace("anyhow::bail!(\"before\")", "\nuse anyhow::bail;\nbail!(\"before\")")
-            .replace("ensure!(true);", "\nuse anyhow::bail;\nensure!(true);")
+            .replace("anyhow::bail!(\"before\")", "use anyhow::bail;\nbail!(\"before\")")
+            .replace("ensure!(true);", "use anyhow::bail;\nensure!(true);")
             .replace("anyhow::bail!(\"after\")", "bail!(\"after\")")
     );
 

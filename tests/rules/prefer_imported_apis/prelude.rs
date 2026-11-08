@@ -59,7 +59,13 @@ pub mod m {
 "#;
 
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
-    assert_eq!(fixed, source.replace("errors::Error", "anyhow::Error"));
+    assert_eq!(
+        fixed,
+        source
+            .replace("use ::anyhow as errors;", "")
+            .replace("errors::Error", "anyhow::Error")
+    );
+
     Ok(())
 }
 
@@ -71,7 +77,12 @@ fn ordinary_and_inactive_conditional_preludes_allow_bare_crate_roots() -> Result
         );
 
         let (_, fixed) = support::fixed(&source, &support::anyhow())?;
-        assert_eq!(fixed, source.replace("errors::Error", "anyhow::Error"));
+        assert_eq!(
+            fixed,
+            source
+                .replace("use ::anyhow as errors;", "")
+                .replace("errors::Error", "anyhow::Error")
+        );
     }
 
     Ok(())

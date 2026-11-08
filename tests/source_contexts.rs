@@ -3,7 +3,7 @@ use anyhow::Result;
 mod support;
 
 #[test]
-fn rules_preserve_shared_module_sources_and_include_fragments() -> Result<()> {
+fn semantic_rules_preserve_shared_sources_while_padding_can_fix_them() -> Result<()> {
     let shared = r#"#[derive(Eq, PartialEq)] pub struct Value;
 use crate::a::Value as Imported;
 use std::fmt;
@@ -25,13 +25,25 @@ pub fn expression() -> u8 { include!("expression.rs") }
     )?;
 
     support::anyhow(&directory)?;
-    for lint in support::LINTS {
+    for lint in support::LINTS.iter().filter(|lint| **lint != "kiki_statement_padding") {
         let output = support::run(&directory, true, lint)?;
         assert!(output.status.success(), "{lint}: {output:?}");
         assert!(support::has_lint(&output, lint), "{lint}: {output:?}");
         assert_eq!(support::read(&directory, "src/shared.rs")?, shared, "{lint}");
         assert_eq!(support::read(&directory, "src/expression.rs")?, fragment, "{lint}");
     }
+
+    let output = support::run(&directory, true, "kiki_statement_padding")?;
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(
+        support::read(&directory, "src/shared.rs")?,
+        shared.replace("pub fn error()", "\npub fn error()")
+    );
+
+    assert_eq!(support::read(&directory, "src/expression.rs")?, fragment);
+    let output = support::run(&directory, false, "kiki_statement_padding")?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!support::has_lint(&output, "kiki_statement_padding"), "{output:?}");
 
     Ok(())
 }

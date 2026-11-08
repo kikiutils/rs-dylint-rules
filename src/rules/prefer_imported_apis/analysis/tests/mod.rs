@@ -14,6 +14,7 @@ mod imports;
 mod macro_inputs;
 mod qualified;
 mod safety;
+mod transactions;
 
 use super::super::{
     model::{
@@ -77,7 +78,15 @@ fn analyze(source: &str, facts: &[(TextRange, Event)], free: bool) -> RuleOutput
         &parse(source),
         source,
         ra_ap_syntax::Edition::Edition2024,
-        facts.iter().map(|(range, event)| (*range, event)),
-        |_| free,
+        facts
+            .iter()
+            .map(|(range, event)| (*range, rustc_hir::CRATE_HIR_ID, event)),
+        &super::super::fix::Checks {
+            name: &|_| free,
+            remove: &|_| true,
+            protected: &crate::syntax::protected,
+            reference: &|_| false,
+            depends: &|_| false,
+        },
     )
 }

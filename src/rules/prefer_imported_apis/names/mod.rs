@@ -1,38 +1,96 @@
+use std::cell::OnceCell;
+
 use kikiutils::types::fx_collections::FxHashSet;
 use ra_ap_syntax::TextRange;
 use rustc_hir::{
     self as hir,
-    def::Namespace,
+    def::{
+        Namespace,
+        Res,
+    },
 };
 use rustc_lint::LateContext;
 use rustc_span::{
+    Ident,
     Span,
     def_id::DefId,
 };
 
 mod bindings;
+mod paths;
 mod safety;
 
-pub(super) struct NameRequest<'a> {
-    pub(super) at: TextRange,
+pub(super) use self::safety::external_crate;
+
+pub(super) struct ReplacedName<'a> {
+    pub(super) definition: DefId,
+    pub(super) ranges: &'a [TextRange],
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct RemovalRequest<'a> {
     pub(super) name: &'a str,
     pub(super) definition: DefId,
+    pub(super) namespace: Namespace,
+    pub(super) range: TextRange,
+    pub(super) scope: TextRange,
+    pub(super) origin: hir::HirId,
+    pub(super) replacements: &'a [TextRange],
+    // Source paths reused by new imports still depend on their original bindings.
+    pub(super) retained: &'a [TextRange],
+}
+
+impl RemovalRequest<'_> {
+    pub(super) fn covered(&self, range: TextRange) -> bool {
+        self.replacements
+            .iter()
+            .any(|replacement| replacement.contains_range(range))
+            && !self.retained.iter().any(|retained| retained.contains_range(range))
+    }
+}
+
+pub(super) struct NameRequest<'a> {
+    pub(super) fact: super::model::FactKey,
+    pub(super) at: TextRange,
+    pub(super) name: &'a str,
+    pub(super) definition: Option<DefId>,
     pub(super) namespace: Namespace,
     pub(super) target: TextRange,
     pub(super) module_target: bool,
     pub(super) reuse: bool,
     pub(super) external: bool,
+    pub(super) replacement: Option<ReplacedName<'a>>,
 }
 
 #[derive(Default)]
 pub(super) struct Names {
     bindings: Vec<Name>,
-    references: Vec<(Span, Name)>,
+    paths: Vec<NamePath>,
+    references: OnceCell<Vec<Reference>>,
     glob_sources: FxHashSet<hir::HirId>,
     externs: Vec<(String, DefId)>,
 }
 
+#[derive(Clone)]
+pub(super) struct Segment {
+    ident: Ident,
+    resolutions: Vec<Res>,
+}
+
+struct NamePath {
+    id: hir::HirId,
+    segments: Vec<Segment>,
+}
+
+struct Reference {
+    span: Span,
+    name: Name,
+    lexical: bool,
+    via: Option<DefId>,
+}
+
 struct Name {
+    id: hir::HirId,
     name: String,
     namespace: Namespace,
     definition: Option<DefId>,

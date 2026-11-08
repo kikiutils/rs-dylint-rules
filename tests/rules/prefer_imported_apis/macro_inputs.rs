@@ -16,7 +16,8 @@ pub fn root() -> Option<Path> {
     assert_eq!(
         fixed,
         source
-            .replace("    let root =", "    use std::env;\n    let root =")
+            .replace("cell::OnceCell, env::current_dir", "cell::OnceCell")
+            .replace("    let root =", "    use std::env;\nlet root =")
             .replace("path!(current_dir()", "path!(env::current_dir()")
     );
 
@@ -35,7 +36,7 @@ fn qualifies_resolved_expression_arguments_in_standard_macros() -> Result<()> {
             fixed,
             source
                 .replace("std::process::id", "process::id")
-                .replacen("{ ", "{ \nuse std::process;\n", 1)
+                .replacen("{ ", "{ use std::process;\n", 1)
         );
     }
 
@@ -53,7 +54,7 @@ pub fn values() -> (u32, u32, u32) { evaluate!(std::process::id()) }
         fixed,
         source.replace(
             "evaluate!(std::process::id())",
-            "\nuse std::process;\nevaluate!(process::id())"
+            "use std::process;\nevaluate!(process::id())"
         )
     );
 
@@ -84,7 +85,7 @@ pub fn text() -> String { format!("{}:{}", gen(), std::process::id()) }
         crate::support::source(&directory)?,
         source
             .replace("std::process::id", "process::id")
-            .replace("{ format!", "{ \nuse std::process;\nformat!")
+            .replace("{ format!", "{ use std::process;\nformat!")
     );
 
     support::clean(&directory)
@@ -122,8 +123,8 @@ pub fn id() -> u32 { wrap!(std::process::id()); inner::id() }
 }
 
 #[test]
-fn macro_arguments_still_respect_namespace_conflicts() -> Result<()> {
-    support::unchanged(
+fn macro_arguments_keep_full_paths_when_short_names_conflict() -> Result<()> {
+    support::accepted(
         r#"pub fn text<process>() -> String { format!("{}", std::process::id()) }
 "#,
         "",
@@ -131,8 +132,8 @@ fn macro_arguments_still_respect_namespace_conflicts() -> Result<()> {
 }
 
 #[test]
-fn repeated_arguments_require_safe_names_in_every_expansion_scope() -> Result<()> {
-    support::unchanged(
+fn repeated_arguments_keep_the_full_path_when_a_short_name_would_be_captured() -> Result<()> {
+    support::accepted(
         r"macro_rules! twice { ($value:expr) => {{
     let first = $value;
     let second = { mod process { pub fn id() -> u32 { 0 } } $value };

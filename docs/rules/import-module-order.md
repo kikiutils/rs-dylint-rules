@@ -84,7 +84,8 @@ use std::sync::Arc;
 
 - 以同一作用域中第一個至最後一個參與排序的項目為重排區段；所有 imports 分組都須明確，且區段內不得穿插其他定義、執行敘述、巨集或未參與排序的項目。
 - 允許整條 use 宣告內的普通註解隨 import 搬移，保留其原文與相對位置；範圍從可見性修飾詞（沒有則從 `use`）到分號，包含 use tree 前後及內部的註解。
-- 宣告範圍外的註解、module 宣告內的註解或區段內 attributes 仍會阻擋修正，緊鄰區段首尾項目的註解亦同。即使 attribute 屬於共用安全清單，也不搬移帶 attribute 的 imports 或 module 宣告；作用域自身或外層則僅在帶有安全清單以外的 attributes 時阻擋修正。
+- `cfg`、以及只含相同安全 attributes 的 `cfg_attr`，可連同 imports／外部 module 宣告原樣搬移；`allow`／`warn`／`deny`／`forbid` 同樣保留在原宣告上。可依語法確認分區的停用外部 module 與明確相對 imports 一併保留，不載入其來源，也不對停用項目產生診斷。
+- 宣告範圍外的註解、module 宣告內的註解、文件註解與緊鄰區段首尾項目的註解仍保留屏障。`expect`、`macro_use` 或未知 attributes 不搬移；作用域自身或外層帶有共用安全清單以外的 attributes 亦阻擋修正。
 - 重排保留項目原文及各分區內的順序，以 LF 分隔項目，分區之間插入空白行。不推導縮排，同一行的宣告也可修正，排版交給 rustfmt。
 
 ## 驗證與安全性依據

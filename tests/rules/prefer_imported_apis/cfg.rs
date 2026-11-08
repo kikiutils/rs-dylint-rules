@@ -34,7 +34,7 @@ fn keeps_new_imports_inside_conditional_initializer_blocks() -> Result<()> {
     let (directory, fixed) = support::fixed(source, &support::timers_feature())?;
     assert_eq!(
         fixed,
-        source.replace("{ tokio::time::sleep", "{ \nuse tokio::time::sleep;\nsleep")
+        source.replace("{ tokio::time::sleep", "{ use tokio::time::sleep;\nsleep")
     );
 
     support::check_without_timers(&directory)

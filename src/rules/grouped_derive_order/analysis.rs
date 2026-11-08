@@ -1,6 +1,5 @@
 use ra_ap_syntax::{
     AstNode,
-    SyntaxKind,
     SyntaxNode,
     TextRange,
     ast,
@@ -16,23 +15,25 @@ use crate::{
         RuleOutput,
     },
     syntax,
+    syntax::{
+        derive_list,
+        derive_meta,
+    },
 };
 
-pub(super) type SortKey = (usize, usize);
-
 pub(super) fn groups_message() -> String {
-    super::DERIVES
-        .chunk_by(|left, right| left.key.0 == right.key.0)
-        .map(|group| {
-            let mut names = Vec::new();
-            for derive in group {
-                if !names.contains(&derive.name) {
-                    names.push(derive.name);
-                }
-            }
+    let mut groups = std::collections::BTreeMap::<_, Vec<_>>::new();
+    for derive in super::DERIVES {
+        let Some((group, _)) = derive.key else { continue };
+        let names = groups.entry(group).or_default();
+        if !names.contains(&derive.name) {
+            names.push(derive.name);
+        }
+    }
 
-            names.join(", ")
-        })
+    groups
+        .into_values()
+        .map(|names| names.join(", "))
         .collect::<Vec<_>>()
         .join("; ")
 }
@@ -111,66 +112,6 @@ pub(super) fn analyze(
     output
 }
 
-fn derive_meta(attribute: &ast::Attr) -> Option<ast::TokenTreeMeta> {
-    let ast::Meta::TokenTreeMeta(meta) = attribute.meta()? else {
-        return None;
-    };
-
-    let path = meta
-        .path()?
-        .syntax()
-        .text()
-        .to_string()
-        .replace(char::is_whitespace, "");
-
-    matches!(
-        path.as_str(),
-        "derive" | "core::derive" | "std::derive" | "::core::derive" | "::std::derive"
-    )
-    .then_some(meta)
-}
-
-fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<TextRange>)> {
-    let meta = derive_meta(attribute)?;
-    let tree = meta.token_tree()?;
-    let left = tree.l_paren_token()?;
-    let right = tree.r_paren_token()?;
-    let inner = TextRange::new(left.text_range().end(), right.text_range().start());
-    let mut paths = Vec::new();
-    let mut start = None;
-    let mut end = None;
-    for element in tree
-        .syntax()
-        .children_with_tokens()
-        .filter(|element| inner.contains_range(element.text_range()))
-    {
-        if element.as_node().is_some() {
-            return None;
-        }
-
-        match element.kind() {
-            SyntaxKind::WHITESPACE | SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT => {},
-            SyntaxKind::COMMA => {
-                if let (Some(start), Some(end)) = (start.take(), end.take()) {
-                    paths.push(TextRange::new(start, end));
-                } else {
-                    return None;
-                }
-            },
-            _ => {
-                start.get_or_insert(element.text_range().start());
-                end = Some(element.text_range().end());
-            },
-        }
-    }
-
-    if let (Some(start), Some(end)) = (start, end) {
-        paths.push(TextRange::new(start, end));
-    }
-
-    Some((tree, inner, paths))
-}
-
 fn safe_attribute(
     attribute: &ast::Attr,
     owner_derives: Option<&[&Derive]>,
@@ -193,7 +134,7 @@ fn safe_helper_meta(meta: ast::Meta, owner_derives: Option<&[&Derive]>) -> bool 
 
     let registered_helper = owner_derives.is_some_and(|derives| {
         meta.simple_name()
-            .is_some_and(|name| derives.iter().any(|derive| derive.helper == Some(name.as_str())))
+            .is_some_and(|name| derives.iter().any(|derive| derive.helpers.contains(&name.as_str())))
     });
 
     registered_helper || syntax::inert_meta(meta)

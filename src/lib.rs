@@ -7,6 +7,7 @@ extern crate rustc_lint_defs;
 extern crate rustc_session;
 extern crate rustc_span;
 
+mod derives;
 mod diagnostic;
 mod facts;
 mod pass;

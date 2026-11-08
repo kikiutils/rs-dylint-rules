@@ -1,4 +1,8 @@
 mod imports;
 mod plan;
+mod rewrite_imports;
 
-pub(super) use self::plan::plan;
+pub(super) use self::plan::{
+    Checks,
+    plan,
+};

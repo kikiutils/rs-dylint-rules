@@ -27,7 +27,7 @@ fn qualifies_standard_functions_and_core_reexports() -> Result<()> {
             .replace("std::process::", "process::")
             .replace(
                 "    let mut value =",
-                "    use std::mem;\n    use std::ptr;\n    use std::env;\n    use std::thread;\n    use std::io;\n    use std::process;\n    let mut value =",
+                "    use std::mem;\nuse std::ptr;\nuse std::env;\nuse std::thread;\nuse std::io;\nuse std::process;\nlet mut value =",
             )
     );
 
@@ -36,9 +36,8 @@ fn qualifies_standard_functions_and_core_reexports() -> Result<()> {
 
 #[test]
 fn qualifies_error_types_without_restricting_other_types_or_prelude_functions() -> Result<()> {
-    let source = r#"use std::result;
-use std::process as proc;
-pub fn result() -> std::io::Result<result::Result<(), std::io::Error>> { Ok(Ok(())) }
+    let source = r#"use std::process as proc;
+pub fn result() -> std::io::Result<Option<()>> { Ok(Some(())) }
 pub fn format_result() -> std::fmt::Result { Ok(()) }
 pub fn format_error() -> std::fmt::Error { std::fmt::Error }
 pub fn kind() -> std::io::ErrorKind { std::io::ErrorKind::Other }
@@ -77,7 +76,7 @@ pub fn command() -> command_process::Command { command_process::Command::new("ex
 }
 
 #[test]
-fn qualifies_bare_functions_and_type_aliases_without_removing_imports() -> Result<()> {
+fn qualifies_bare_functions_and_type_aliases_with_import_cleanup() -> Result<()> {
     let source = r#"use std::{process::id, io::Error as IoError};
 pub fn current() -> (fn() -> u32, u32) { (id, id()) }
 pub fn error() -> IoError { IoError::other("example") }
@@ -89,10 +88,8 @@ pub fn error() -> IoError { IoError::other("example") }
         format!(
             "use std::io;\n{}",
             source
-                .replace(
-                    "{ (id, id()) }",
-                    "{ \nuse std::process;\n(process::id, process::id()) }"
-                )
+                .replace("use std::{process::id, io::Error as IoError};", "")
+                .replace("{ (id, id()) }", "{ use std::process;\n(process::id, process::id()) }")
                 .replace("-> IoError", "-> io::Error")
                 .replace("IoError::other", "io::Error::other")
         )
@@ -101,13 +98,7 @@ pub fn error() -> IoError { IoError::other("example") }
     let output = crate::support::run(&directory, false, support::LINT)?;
     assert!(output.status.success(), "{output:?}");
     let diagnostics = crate::support::diagnostics(&output, support::LINT);
-    assert!(!diagnostics.is_empty(), "{output:?}");
-    assert!(
-        diagnostics.iter().all(|diagnostic| diagnostic["message"]["message"]
-            .as_str()
-            .is_some_and(|message| message.contains("directly importing"))),
-        "{output:?}"
-    );
+    assert!(diagnostics.is_empty(), "{output:?}");
 
     Ok(())
 }

@@ -8,11 +8,7 @@ use rustc_hir::{
     },
 };
 use rustc_lint::LateContext;
-use rustc_span::{
-    Span,
-    def_id::DefId,
-    kw,
-};
+use rustc_span::def_id::DefId;
 
 use super::{
     Name,
@@ -31,6 +27,7 @@ impl Names {
         }
 
         self.bindings.push(Name {
+            id,
             name: name.to_owned(),
             namespace,
             definition: resolution.opt_def_id(),
@@ -47,6 +44,7 @@ impl Names {
         };
 
         self.bindings.push(Name {
+            id: parameter.hir_id,
             name: parameter.name.ident().name.to_string(),
             namespace,
             definition: None,
@@ -83,44 +81,13 @@ impl Names {
             .unwrap_or_else(|| lexical_scope(cx, pattern.hir_id));
 
         self.bindings.push(Name {
+            id,
             name: ident.name.to_string(),
             namespace: Namespace::ValueNS,
             definition: None,
             scope,
             module: module(cx, id),
         });
-    }
-
-    pub(crate) fn reference(&mut self, cx: &LateContext<'_>, path: &hir::Path<'_>, id: hir::HirId) {
-        let mut segments = path
-            .segments
-            .iter()
-            .filter(|segment| segment.ident.name != kw::PathRoot);
-
-        let Some(first) = segments.next() else { return };
-        let resolution = if segments.next().is_none() { path.res } else { first.res };
-        self.reference_resolution(cx, id, first.ident.name.as_str(), first.ident.span, resolution);
-    }
-
-    pub(crate) fn reference_resolution(
-        &mut self,
-        cx: &LateContext<'_>,
-        id: hir::HirId,
-        name: &str,
-        span: Span,
-        resolution: Res,
-    ) {
-        let Some(namespace) = resolution.ns() else { return };
-        self.references.push((
-            span,
-            Name {
-                name: name.to_owned(),
-                namespace,
-                definition: resolution.opt_def_id(),
-                scope: id,
-                module: module(cx, id),
-            },
-        ));
     }
 
     pub(crate) fn glob(&mut self, cx: &LateContext<'_>, definition: DefId) {

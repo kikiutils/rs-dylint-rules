@@ -8,7 +8,10 @@ use rustc_hir::{
 use rustc_lint::LateContext;
 
 use super::{
-    super::model::Event,
+    super::{
+        model::Event,
+        names::Segment,
+    },
     Collector,
 };
 use crate::workspace::Workspace;
@@ -21,16 +24,23 @@ impl Collector {
         tree: &hir::UseTree<'_>,
         id: hir::HirId,
     ) {
-        // Import routes themselves can be captured by a new namespace binding.
-        if let Some(first) = tree.prefix.segments.first() {
-            self.names
-                .reference_resolution(cx, id, first.ident.name.as_str(), first.ident.span, first.res);
-        }
+        self.import_tree(cx, workspace, tree, id, &[]);
+    }
+
+    fn import_tree(
+        &mut self,
+        cx: &LateContext<'_>,
+        workspace: &mut Workspace,
+        tree: &hir::UseTree<'_>,
+        id: hir::HirId,
+        parent: &[Segment],
+    ) {
+        let segments = self.names.import_path(tree, id, parent);
 
         match tree.kind {
             hir::UseKind::Nested { items } => {
                 for (child, child_id, _) in items {
-                    self.import(cx, workspace, child, *child_id);
+                    self.import_tree(cx, workspace, child, *child_id, &segments);
                 }
             },
             hir::UseKind::Single(binding) => {

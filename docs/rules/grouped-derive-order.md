@@ -31,8 +31,8 @@
 | 10 | Variant 資料擷取 | `Unwrap` → `TryUnwrap` → `EnumTryAs` |
 | 11 | 迭代 | `IntoIterator` → `EnumIter` |
 
-- 分組與排序根據 rustc 確認的巨集來源，不只比較最後一段名稱。內建 derive 須由 compiler 確認；Serde derive 須解析至 `serde_derive` crate 的 `Serialize` 或 `Deserialize`，可經由 `serde` re-export、限定路徑或 alias 使用。`IsEmpty` 須來自 `is_empty_derive`；`Serialize_repr`／`Deserialize_repr` 須來自 `serde_repr`；Strum derives 須來自 `strum_macros`，支援經由 `strum` re-export。derive_more derives 須來自 `derive_more_impl`，支援經由 `derive_more` re-export。其他 crate 的同名巨集不列入支援清單。
-- 巨集身分與排序鍵分開保存；來源匹配同時檢查名稱與來源，helper 授權依實際解析的 derive，而不是共用的排序鍵。內建與 derive_more 的 `Debug`／`PartialEq`／`Eq` 共用排序鍵；derive_more 與 Strum 的 `Display` 也共用排序鍵。
+- 分組與排序根據 rustc 確認的巨集來源，不只比較最後一段名稱。內建 derive 須由 compiler 確認；Serde derive 須解析至 `serde_derive` crate 的 `Serialize` 或 `Deserialize`，可經由 `serde` re-export、限定路徑或 alias 使用。`IsEmpty` 須來自 `is_empty_derive`；`Serialize_repr`／`Deserialize_repr` 須來自 `serde_repr`；Strum derives 須來自 `strum_macros`，支援經由 `strum` re-export。derive_more derives 須來自 `derive_more_impl`，支援經由 `derive_more` re-export；thiserror 的 `Error` 須來自 `thiserror_impl`，支援經由 `thiserror` re-export。其他 crate 的同名巨集不列入支援清單。
+- 巨集身分與排序鍵分開保存；來源匹配同時檢查名稱與來源，helper 授權依實際解析的 derive，而不是共用的排序鍵。內建與 derive_more 的 `Debug`／`PartialEq`／`Eq` 共用排序鍵；derive_more 與 Strum 的 `Display`、derive_more 與 thiserror 的 `Error` 也各自共用排序鍵。身分與 helper 資料共用 `src/derives.rs`；本規則只處理其中有排序鍵的項目，不因 API 路徑修正支援其他 derive 而擴大排序範圍。
 - 每個 `#[derive(...)]` 只整理自己的列表，不合併、拆分、交換 attributes，也不在列表之間搬動 derive。
 - 列表含有任何未知或未支援的 derive 時，整個列表略過，不提供排序診斷或修正，也不要求未知項目移至最後或按字典排序。
 - 某個列表被略過，不阻擋同一 item 上其他純已知列表獨立診斷，但會阻擋其自動修正，避免改變未知 derive 收到的輸入。
@@ -42,6 +42,7 @@
 ## 第三方支援清單
 
 - derive_more（19 項）：`Debug`、`Display`、`Error`、`PartialEq`、`Eq`、`Constructor`、`From`、`TryFrom`、`FromStr`、`AsRef`、`AsMut`、`Deref`、`DerefMut`、`Index`、`IndexMut`、`IsVariant`、`Unwrap`、`TryUnwrap`、`IntoIterator`。
+- thiserror：`Error`，使用既有的 `Error` 排序位置。
 - Strum（12 項）：`Display`、`AsRefStr`、`EnumString`、`FromRepr`、`EnumTryAs`、`EnumIter`、`EnumProperty`、`EnumMessage`、`EnumIs`、`EnumCount`、`VariantNames`、`VariantArray`。
 - 同名但不同來源的 derives 使用相同排序位置，不會因此合併、替換或去重。
 
@@ -124,7 +125,7 @@ struct Value(u32);
 - 僅修正所有項目皆確認為支援之 derive，且沒有註解或 attribute 障礙的列表。
 - 同一 item 或涵蓋待修列表的外層定義帶有未知／未解析的 derive 時，保留已知列表的排序診斷，但不提供修正。
 - 列表內有註解時仍可檢查純已知項目的順序，但不自動修正，避免改變註解歸屬。
-- 定義自身的 `serde`、`is_empty`、`strum`，以及 derive_more 各項已註冊的 helper attributes（如 `debug`、`display`、`from`、`into_iterator`），須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。不在共用安全清單內的其他 attributes，以及外層 helper 同名 attributes，仍只診斷、不修正，避免改變 attribute macro 的輸入。
+- 定義自身的 `serde`、`is_empty`、`strum`、thiserror 的 `error`／`from`／`source`／`backtrace`，以及 derive_more 各項已註冊的 helper attributes（如 `debug`、`display`、`from`、`into_iterator`），須有同一定義上經 rustc 確認、會註冊該 helper 的已支援 derive 才放行；可位於另一個 derive 列表。不在共用安全清單內的其他 attributes，以及外層 helper 同名 attributes，仍只診斷、不修正，避免改變 attribute macro 的輸入。
 - 上述已確認 helper 可由 `cfg_attr` 包裹，支援巢狀及與共用安全 attributes 混用；遞迴檢查所有分支，未啟用分支中的未知 attribute 仍阻擋修正。外層定義的同名 helper 不因此放行，`cfg_attr` 內的 derive 列表仍不處理。
 - 僅替換該 attribute 括號內的列表，保留各 derive 路徑與 alias 的原文及 attribute 外的內容；列表直接以 `", "` 串接，不保留原有尾隨逗號，換行、縮排與尾逗號交由 rustfmt 處理。
 - 不調整 attributes 的位置，不合併或拆分列表，也不對未列入支援清單的第三方／未知 derive 提供自動排序。
@@ -132,7 +133,7 @@ struct Value(u32);
 
 ## 驗證與安全性依據
 
-已查核版本：Serde `1.0.229`、is_empty `0.3.0`（is_empty_derive `0.1.0`）、serde_repr `0.1.21`、strum／strum_macros `0.28.0`、derive_more／derive_more-impl `2.1.1`。實作依巨集來源辨識，不限制使用端版本；其他版本若改變展開結構，須重新驗證。
+已查核版本：Serde `1.0.229`、is_empty `0.3.0`（is_empty_derive `0.1.0`）、serde_repr `0.1.21`、strum／strum_macros `0.28.0`、derive_more／derive_more-impl `2.1.1`、thiserror／thiserror-impl `2.0.21`。實作依巨集來源辨識，不限制使用端版本；其他版本若改變展開結構，須重新驗證。
 
 Rust 允許同一 item 有多個 derive attributes；[Reference](https://doc.rust-lang.org/reference/attributes/derive.html) 並未指定本文件的風格順序。[rustc #124794](https://github.com/rust-lang/rust/issues/124794) 展示的差異涉及分開書寫的 `Clone`／`Copy` attributes，不能推論成同一列表中兩者互換必然有相同問題；本規則不改變跨 attribute 的排列。
 
@@ -143,6 +144,8 @@ Serde `1.0.229` 的 [Serialize 產生器](https://docs.rs/crate/serde_derive/1.0
 is_empty_derive `0.1.0` 的 [產生器](https://docs.rs/crate/is_empty_derive/0.1.0/source/src/is_empty.rs) 依欄位產生 `IsEmpty` impl；serde_repr `0.1.21` 的 [產生器](https://docs.rs/crate/serde_repr/0.1.21/source/src/lib.rs) 依整數 repr 分別產生序列化與反序列化 impl。Strum `0.28.0` 支援項目的 [產生器](https://docs.rs/crate/strum_macros/0.28.0/source/src/macros/) 為原 enum 產生 impl；`EnumIter` 同時產生 iterator 型別，collector 忽略其輔助型別，只採用原 enum 的 impl。
 
 derive_more `2.1.1` 的 [產生器](https://docs.rs/crate/derive_more-impl/2.1.1/source/src/) 依自身 helper 與型別內容產生 impl；測試涵蓋全部 19 項、同名內建替代實作、helpers、aliases、泛型、`IntoIterator` 的 owned／ref／ref_mut 與僅借用設定，以及排序前後行為。collector 會剝除 impl Self type 的參照，避免僅產生 `&T`／`&mut T` impl 的設定漏報。
+
+thiserror `2.0.21` 的 `Error` 註冊 `error`、`from`、`source`、`backtrace` helpers；整合測試比較排序前後的顯示文字、`#[from]` 轉換、明確 `#[source]` 與 `#[error(transparent)]` 的來源鏈，並確認再次修正沒有診斷或內容變更。`backtrace` helper 登記僅依原始碼查核，未在此行為測試中驗證。
 
 ## 未決事項或後續規劃
 

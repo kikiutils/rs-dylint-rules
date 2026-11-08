@@ -178,7 +178,7 @@ fn real_compiler_barriers_preserve_sources_without_suppressing_diagnostics() -> 
     for source in [
         "use crate::child::Value;\n// attached\nmod child;\nuse std::fmt;\n",
         "use crate::child::Value;\nmod child;\nuse std::fmt; // edge\n",
-        "#[allow(unused_imports)] use crate::child::Value;\nmod child;\nuse std::fmt;\n",
+        "#[expect(unused_imports)] use crate::child::Value;\nmod child;\nuse std::fmt;\n",
         "use crate::child::Value;\nfn barrier() {}\nmod child;\nuse std::fmt;\n",
         "use crate::child::Value;\n#[macro_use] mod child;\nuse std::fmt;\nfn invoke() { child_macro!(); }\n",
         "use {std::fmt::Debug as _, crate::child::ChildTrait as _};\nmod child;\n",
@@ -197,5 +197,44 @@ fn real_compiler_barriers_preserve_sources_without_suppressing_diagnostics() -> 
         assert_eq!(support::source(&directory)?, source);
     }
 
+    Ok(())
+}
+
+#[test]
+fn cfg_platform_declarations_move_intact_including_inactive_branches() -> Result<()> {
+    let source = r"use self::definitions::Local;
+#[cfg(unix)] mod linux;
+#[cfg(windows)] mod windows;
+#[cfg(unix)] use self::linux as platform;
+#[cfg(windows)] use self::windows as platform;
+use std::fmt;
+mod definitions { pub struct Local; }
+pub fn value() { platform::value(); }
+";
+
+    let directory = support::fixture_with(
+        source,
+        &[
+            ("src/linux.rs", "pub fn value() {}\n"),
+            ("src/windows.rs", "pub fn value() {}\n"),
+        ],
+    )?;
+
+    let output = support::run(&directory, true, "kiki_import_module_order")?;
+    assert!(output.status.success(), "{output:?}");
+    let fixed = support::source(&directory)?;
+    assert!(
+        fixed.starts_with("use std::fmt;\n\n#[cfg(unix)] mod linux;\n#[cfg(windows)] mod windows;"),
+        "{fixed}"
+    );
+
+    assert!(
+        fixed.contains("#[cfg(windows)] use self::windows as platform;"),
+        "{fixed}"
+    );
+
+    let output = support::run(&directory, false, "kiki_import_module_order")?;
+    assert!(output.status.success(), "{output:?}");
+    assert!(!support::has_lint(&output, "kiki_import_module_order"), "{output:?}");
     Ok(())
 }

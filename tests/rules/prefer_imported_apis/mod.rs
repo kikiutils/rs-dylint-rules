@@ -4,6 +4,7 @@ mod confique;
 mod direct;
 mod imports;
 mod macro_inputs;
+mod platform;
 mod prelude;
 mod resolution;
 mod result;

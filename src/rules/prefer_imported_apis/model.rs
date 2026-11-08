@@ -1,7 +1,16 @@
+use ra_ap_syntax::TextRange;
+use rustc_span::def_id::DefId;
+
 use super::policy::{
     Api,
     Qualifier,
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(super) struct FactKey {
+    pub(super) range: TextRange,
+    pub(super) definition: DefId,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(super) enum UseKind {
@@ -27,4 +36,13 @@ pub(super) enum Event {
         name: String,
         renamed: bool,
     },
+}
+
+impl Event {
+    pub(super) fn definition(&self) -> DefId {
+        match self {
+            Self::Use { api, .. } | Self::Import { api, .. } => api.definition,
+            Self::NamespaceImport { qualifier, .. } => qualifier.definition,
+        }
+    }
 }

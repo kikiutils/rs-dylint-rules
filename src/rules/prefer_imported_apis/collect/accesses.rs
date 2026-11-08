@@ -3,10 +3,13 @@ use rustc_hir::{
     def::Res,
 };
 use rustc_lint::LateContext;
-use rustc_span::hygiene::{
-    ExpnId,
-    ExpnKind,
-    MacroKind,
+use rustc_span::{
+    Span,
+    hygiene::{
+        ExpnId,
+        ExpnKind,
+        MacroKind,
+    },
 };
 
 use super::{
@@ -63,31 +66,7 @@ impl Collector {
         workspace: &mut Workspace,
         expression: &'tcx hir::Expr<'tcx>,
     ) {
-        // HIR visits the outer expansion expression first. Its descendants are
-        // not independent source invocations, unlike distinct expansion IDs.
-        let mut expansion = expression.span.ctxt().outer_expn();
-        while expansion != ExpnId::root() {
-            let data = expansion.expn_data();
-            if matches!(data.kind, ExpnKind::Macro(MacroKind::Bang, _))
-                && !data.call_site.from_expansion()
-                && let Some(definition) = data.macro_def_id
-                && let Some(api) = self.api(cx, definition)
-                && self.macro_calls.insert(expansion)
-            {
-                self.record(
-                    cx,
-                    workspace,
-                    data.call_site,
-                    expression.hir_id,
-                    Event::Use {
-                        kind: UseKind::Macro,
-                        api,
-                    },
-                );
-            }
-
-            expansion = data.parent;
-        }
+        self.expansion_paths(cx, workspace, expression.span, expression.hir_id);
 
         if let hir::ExprKind::MethodCall(segment, _, _, _) = expression.kind
             && !segment.ident.span.from_expansion()
@@ -109,6 +88,44 @@ impl Collector {
                     api,
                 },
             );
+        }
+    }
+
+    pub(super) fn expansion_paths(
+        &mut self,
+        cx: &LateContext<'_>,
+        workspace: &mut Workspace,
+        span: Span,
+        id: hir::HirId,
+    ) {
+        // Several generated nodes can belong to the same original invocation.
+        let mut expansion = span.ctxt().outer_expn();
+        while expansion != ExpnId::root() {
+            let data = expansion.expn_data();
+            if let ExpnKind::Macro(kind, _) = data.kind
+                && !data.call_site.from_expansion()
+                && let Some(definition) = data.macro_def_id
+                && self.macro_calls.insert(expansion)
+            {
+                self.names.macro_path(cx, data.call_site, id, definition, kind);
+                // Attribute and derive paths are dependencies, not API rewrite requests.
+                if kind == MacroKind::Bang
+                    && let Some(api) = self.api(cx, definition)
+                {
+                    self.record(
+                        cx,
+                        workspace,
+                        data.call_site,
+                        id,
+                        Event::Use {
+                            kind: UseKind::Macro,
+                            api,
+                        },
+                    );
+                }
+            }
+
+            expansion = data.parent;
         }
     }
 }

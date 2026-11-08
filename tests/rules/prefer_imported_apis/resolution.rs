@@ -112,7 +112,7 @@ fn permits_module_imports_despite_same_named_value_bindings() -> Result<()> {
         fixed,
         source.replace(
             "{ (process, std::process::id()) }",
-            "{ \nuse std::process;\n(process, process::id()) }"
+            "{ use std::process;\n(process, process::id()) }"
         )
     );
 
@@ -120,8 +120,8 @@ fn permits_module_imports_despite_same_named_value_bindings() -> Result<()> {
 }
 
 #[test]
-fn rejects_module_imports_that_conflict_in_the_type_namespace() -> Result<()> {
-    support::unchanged(
+fn accepts_full_paths_when_short_module_names_conflict_in_the_type_namespace() -> Result<()> {
+    support::accepted(
         r"pub fn id<process>() -> u32 { std::process::id() }
 ",
         "",
@@ -158,18 +158,42 @@ pub fn current() -> u32 { id() }
 ";
 
     let (_, fixed) = support::rewritten(source, "")?;
-    assert_eq!(fixed, source.replace("{ id()", "{ \nuse std::process;\nprocess::id()"));
+    assert_eq!(fixed, source.replace("{ id()", "{ use std::process;\nprocess::id()"));
     Ok(())
 }
 
 #[test]
-fn bare_function_uses_remain_unchanged_when_the_namespace_is_shadowed() -> Result<()> {
-    support::unchanged("use std::process::id;\npub fn current<process>() -> u32 { id() }\n", "")
+fn namespace_conflicts_use_full_paths_for_modules_and_generic_parameters() -> Result<()> {
+    for (source, expected) in [
+        (
+            "use std::process::id;\npub fn current<process>() -> u32 { id() }\n",
+            "pub fn current<process>() -> u32 { std::process::id() }\n",
+        ),
+        (
+            r#"use std::io::{Error as IoError, Result as IoResult};
+use std::process::id;
+mod io {}
+mod process {}
+pub fn error() -> IoResult<()> { Err(IoError::other("example")) }
+pub fn pid() -> u32 { id() }
+"#,
+            r#"mod io {}
+mod process {}
+pub fn error() -> std::io::Result<()> { Err(std::io::Error::other("example")) }
+pub fn pid() -> u32 { std::process::id() }
+"#,
+        ),
+    ] {
+        let (_, fixed) = support::fixed(source, "")?;
+        assert_eq!(fixed, expected);
+    }
+
+    Ok(())
 }
 
 #[test]
 fn does_not_insert_bindings_into_modules_consumed_by_globs() -> Result<()> {
-    support::unchanged(
+    support::accepted(
         r"mod producer {
     pub fn result() -> std::io::Result<()> { Ok(()) }
     mod consumer { use super::*; pub fn run() { let _ = result(); } }

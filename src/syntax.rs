@@ -149,10 +149,17 @@ pub(crate) fn protected_with(node: &SyntaxNode, extra_safe: impl Fn(&ast::Attr) 
 }
 
 pub(crate) fn conditional_attribute(attribute: &ast::Attr) -> bool {
-    attribute
-        .meta()
-        .and_then(|meta| meta.simple_name())
-        .is_some_and(|name| matches!(name.as_str(), "cfg" | "cfg_attr"))
+    attribute.meta().is_some_and(conditional_meta)
+}
+
+fn conditional_meta(meta: ast::Meta) -> bool {
+    if let ast::Meta::CfgAttrMeta(meta) = meta {
+        return meta.metas().any(conditional_meta);
+    }
+
+    // cfg_attr changes item presence only when it can introduce cfg. Derives
+    // and helpers are checked separately before changing any item paths.
+    meta.simple_name().is_some_and(|name| name == "cfg")
 }
 
 // Splitting an item must not duplicate lint expectation IDs or their scope.
@@ -162,4 +169,98 @@ pub(crate) fn has_expectation(meta: ast::Meta) -> bool {
     }
 
     meta.simple_name().is_some_and(|name| name == "expect")
+}
+
+pub(crate) fn derive_meta(attribute: &ast::Attr) -> Option<ast::TokenTreeMeta> {
+    derive_token_meta(attribute.meta()?)
+}
+
+fn derive_token_meta(meta: ast::Meta) -> Option<ast::TokenTreeMeta> {
+    let ast::Meta::TokenTreeMeta(meta) = meta else {
+        return None;
+    };
+
+    let path = meta
+        .path()?
+        .syntax()
+        .text()
+        .to_string()
+        .replace(char::is_whitespace, "");
+
+    matches!(
+        path.as_str(),
+        "derive" | "core::derive" | "std::derive" | "::core::derive" | "::std::derive"
+    )
+    .then_some(meta)
+}
+
+pub(crate) fn derive_list(attribute: &ast::Attr) -> Option<(ast::TokenTree, TextRange, Vec<TextRange>)> {
+    derive_list_meta(attribute.meta()?)
+}
+
+pub(crate) fn derive_list_meta(meta: ast::Meta) -> Option<(ast::TokenTree, TextRange, Vec<TextRange>)> {
+    let meta = derive_token_meta(meta)?;
+    let tree = meta.token_tree()?;
+    let left = tree.l_paren_token()?;
+    let right = tree.r_paren_token()?;
+    let inner = TextRange::new(left.text_range().end(), right.text_range().start());
+    let mut paths = Vec::new();
+    let mut start = None;
+    let mut end = None;
+    for element in tree
+        .syntax()
+        .children_with_tokens()
+        .filter(|element| inner.contains_range(element.text_range()))
+    {
+        if element.as_node().is_some() {
+            return None;
+        }
+
+        match element.kind() {
+            SyntaxKind::WHITESPACE | SyntaxKind::COMMENT | SyntaxKind::DOC_COMMENT => {},
+            SyntaxKind::COMMA => {
+                if let (Some(start), Some(end)) = (start.take(), end.take()) {
+                    paths.push(TextRange::new(start, end));
+                } else {
+                    return None;
+                }
+            },
+            _ => {
+                start.get_or_insert(element.text_range().start());
+                end = Some(element.text_range().end());
+            },
+        }
+    }
+
+    if let (Some(start), Some(end)) = (start, end) {
+        paths.push(TextRange::new(start, end));
+    }
+
+    Some((tree, inner, paths))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::parse;
+
+    #[test]
+    fn conditional_attributes_only_track_item_presence() {
+        for (attribute, conditional) in [
+            ("#[cfg(feature = \"active\")]", true),
+            ("#[cfg_attr(feature = \"active\", cfg(unix))]", true),
+            ("#[cfg_attr(all(), cfg_attr(all(), cfg(unix)))]", true),
+            ("#[cfg_attr(feature = \"serde\", derive(serde::Serialize))]", false),
+            ("#[cfg_attr(all(), cfg_attr(all(), allow(dead_code)))]", false),
+        ] {
+            let source = format!("{attribute}\nstruct Value;");
+            let root = parse(&source);
+            let item = root
+                .children()
+                .find_map(ast::Struct::cast)
+                .unwrap_or_else(|| panic!("missing struct"));
+
+            assert_eq!(has_conditional_attribute(item.syntax()), conditional, "{attribute}");
+        }
+    }
 }
