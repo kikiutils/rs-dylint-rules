@@ -3,6 +3,43 @@ use anyhow::Result;
 use super::support;
 
 #[test]
+fn qualifies_errno_in_nested_match_guards_and_preserves_behavior() -> Result<()> {
+    let import = "use rustix::io::Errno;\n";
+    let body = r"pub fn retry(error: Option<Errno>) -> bool {
+    matches!(error, Some(error) if matches!(error,
+        code if code == Errno::INTR || code == Errno::AGAIN || code == Errno::WOULDBLOCK,
+    ))
+}
+#[test]
+fn behavior() {
+    assert!(retry(Some(Errno::INTR)));
+    assert!(retry(Some(Errno::AGAIN)));
+    assert!(retry(Some(Errno::WOULDBLOCK)));
+    assert!(!retry(Some(Errno::INVAL)));
+    assert!(!retry(None));
+}
+";
+    let directory = support::fixture(&format!("{import}{body}"), "rustix=\"=1.1.6\"")?;
+    support::behavior(&directory)?;
+    let output = crate::support::run(&directory, true, support::LINT)?;
+    assert!(output.status.success(), "{output:?}");
+    let fixed = crate::support::source(&directory)?;
+    assert_eq!(
+        fixed,
+        format!(
+            "{import}{}",
+            body.replace("Option<Errno>", "Option<rustix::io::Errno>")
+                .replace("code == Errno::", "code == rustix::io::Errno::")
+        )
+    );
+    support::clean(&directory)?;
+    let output = crate::support::run(&directory, true, support::LINT)?;
+    assert!(output.status.success(), "{output:?}");
+    assert_eq!(crate::support::source(&directory)?, fixed);
+    support::behavior(&directory)
+}
+
+#[test]
 fn qualifies_the_original_expression_inside_pathkit_and_a_closure() -> Result<()> {
     let source = r"use std::{cell::OnceCell, env::current_dir};
 use pathkit::{Path, SyncFsOps, path};

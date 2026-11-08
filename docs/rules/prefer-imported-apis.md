@@ -172,7 +172,7 @@ fn fail() -> AnyhowResult<()> { // 改用 Result<()>，必要時新增 use anyho
 ## 實作限制
 
 - 無法可靠解析來源時不猜測。名稱檢查包含 generic、value binding 與 `macro_rules!` 文字作用域；不自行展開巨集或猜測未解析的名稱。
-- 巨集輸入須能依呼叫端 edition 解析為一般 Rust 運算式，僅依 compiler facts 重讀對應的原文路徑及 attributes，保留原始呼叫所在的作用域；不跨入輸入內的巢狀 module，也不展開巨集、不掃描巨集定義本體，或根據 `stringify!` 等未執行輸入中的文字推斷 API。
+- 巨集輸入支援依呼叫端 edition 解析的一般 Rust 運算式，以及 `matches!` 的「運算式、pattern（可含 guard）」形式，包含巢狀呼叫。僅依 compiler facts 重讀對應的原文路徑及 attributes，保留原始呼叫所在的作用域；不跨入輸入內的巢狀 module，也不展開巨集、不掃描巨集定義本體，或根據 `stringify!` 等未執行輸入中的文字推斷 API。
 
 ## Auto-fix
 
