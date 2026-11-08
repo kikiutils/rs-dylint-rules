@@ -7,70 +7,59 @@ use ra_ap_syntax::{
 
 mod accesses;
 pub(super) mod attributes;
-pub(super) mod bindings;
-mod fallback;
-mod imports;
+mod bindings;
+mod decision;
 mod paths;
+mod targets;
 
 pub(super) use self::{
     accesses::Access,
-    imports::Import,
+    decision::Decision,
 };
 use super::{
     fix,
-    model::{
-        Event,
-        UseKind,
-    },
+    model::Event,
+    names::NameRequest,
 };
 use crate::diagnostic::RuleOutput;
+
+pub(super) struct Checks<'a> {
+    pub(super) name: &'a dyn Fn(NameRequest<'_>) -> bool,
+    pub(super) protected: &'a dyn Fn(&SyntaxNode) -> bool,
+}
 
 pub(super) fn analyze<'a>(
     root: &SyntaxNode,
     source: &str,
     edition: Edition,
-    facts: impl IntoIterator<Item = (TextRange, rustc_hir::HirId, &'a Event)>,
-    checks: &fix::Checks<'_>,
+    facts: impl IntoIterator<Item = (TextRange, &'a Event)>,
+    checks: &Checks<'_>,
 ) -> RuleOutput {
-    let mut output = RuleOutput::default();
-    let mut imports = Vec::new();
-    let mut accesses = Vec::new();
-    let mut reported_imports = FxHashSet::default();
     let mut seen = FxHashSet::default();
-    for (range, origin, event) in facts
-        .into_iter()
-        .filter(|(range, _, event)| seen.insert((*range, *event)))
-    {
-        match event {
-            Event::Import { .. } | Event::NamespaceImport { .. } => {
-                if let Some(import) = imports::read(root, range, event, origin, &mut reported_imports, &mut output) {
-                    imports.push(import);
-                }
-            },
-            Event::Use { api, kind } => {
-                if let Some(access) = accesses::read(root, range, api.clone(), *kind, edition) {
-                    accesses.push(access);
-                }
-            },
+    let mut accesses = Vec::new();
+    let mut imports = Vec::new();
+    for (range, event) in facts {
+        if let Some(import) = bindings::ExistingImport::read(root, range, event) {
+            imports.push(import);
         }
-    }
 
-    accesses.sort_by_key(|access| (access.scope.text_range().start(), access.range.start()));
-    let mut requests = Vec::new();
-    for access in &accesses {
-        if access.kind == UseKind::Trait
-            || access.is_canonical()
-            || fallback::is_fallback(access, &imports, checks.name)
+        if let Event::Use { api, kind } = event
+            && seen.insert((range, event))
+            && let Some(access) = accesses::read(root, range, api.clone(), *kind, edition)
         {
-            accesses::check_import_order(access, &imports, &mut reported_imports, &mut output);
-        } else {
-            output.report(access.diagnostic());
-            requests.push(access);
+            accesses.push(access);
         }
     }
 
-    fix::plan(root, source, &imports, &accesses, &requests, checks, &mut output);
+    accesses.sort_by_key(|access| access.range.start());
+    let covered = decision::covered(&accesses, &imports, checks);
+    let decisions: Vec<_> = accesses
+        .iter()
+        .map(|access| decision::decide(access, source, &covered, &imports, checks))
+        .collect();
 
+    let mut output = RuleOutput::default();
+    fix::plan(&accesses, &decisions, &mut output);
     output
 }
 

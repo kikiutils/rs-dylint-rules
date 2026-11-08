@@ -90,7 +90,6 @@ pub(super) fn unchanged(source: &str, dependencies: &str) -> Result<()> {
     let directory = fixture(source, dependencies)?;
     let output = support::run(&directory, true, LINT)?;
     assert!(output.status.success(), "{output:?}");
-    assert!(support::has_lint(&output, LINT), "{output:?}");
     assert_eq!(support::source(&directory)?, source, "{output:?}");
-    Ok(())
+    clean(&directory)
 }

@@ -8,17 +8,17 @@ use ra_ap_syntax::{
 
 use crate::syntax;
 
-pub(super) fn read(root: &SyntaxNode, range: TextRange, edition: Edition) -> Option<(SyntaxNode, String, bool)> {
+pub(super) fn read(root: &SyntaxNode, range: TextRange, edition: Edition) -> Option<(SyntaxNode, String)> {
     if let Some(path) = find(root, range) {
-        return Some((path.syntax().clone(), spelling(&path, range), false));
+        return Some((path.syntax().clone(), spelling(&path, range)));
     }
 
     // Keep the original scope anchor. Recover spelling and inner attribute
     // barriers from expression-shaped input; compiler facts supply identity.
     let element = root.covering_element(range);
     let node = element.as_node().cloned().or_else(|| element.parent())?;
-    let (spelling, conditional) = macro_spelling(root, range, edition)?;
-    Some((node, spelling, conditional))
+    let spelling = macro_spelling(root, range, edition)?;
+    Some((node, spelling))
 }
 
 fn find(root: &SyntaxNode, range: TextRange) -> Option<ast::Path> {
@@ -32,7 +32,7 @@ fn find(root: &SyntaxNode, range: TextRange) -> Option<ast::Path> {
         })
 }
 
-fn macro_spelling(root: &SyntaxNode, range: TextRange, edition: Edition) -> Option<(String, bool)> {
+fn macro_spelling(root: &SyntaxNode, range: TextRange, edition: Edition) -> Option<String> {
     let call = root
         .covering_element(range)
         .ancestors()
@@ -59,16 +59,11 @@ fn macro_spelling(root: &SyntaxNode, range: TextRange, edition: Edition) -> Opti
         return None;
     }
 
-    let conditional = root
-        .covering_element(range)
-        .ancestors()
-        .any(|node| syntax::has_conditional_attribute(&node));
-
     if let Some(path) = find(&root, range) {
-        return (!syntax::protected(path.syntax())).then(|| (spelling(&path, range), conditional));
+        return (!syntax::protected(path.syntax())).then(|| spelling(&path, range));
     }
 
-    macro_spelling(&root, range, edition).map(|(spelling, nested)| (spelling, conditional || nested))
+    macro_spelling(&root, range, edition)
 }
 
 pub(super) fn spelling(path: &ast::Path, range: TextRange) -> String {

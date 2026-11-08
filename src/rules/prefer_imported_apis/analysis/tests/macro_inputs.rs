@@ -23,7 +23,7 @@ fn macro_expression_paths_keep_generic_suffixes_and_original_offsets() {
     let output = analyze(source, &facts, true);
     assert_eq!(
         apply(source, &output),
-        "fn run() { use std::ptr;\nvec![ptr::null::<u8>(); 2]; }\n"
+        "use std::ptr;\nfn run() { vec![ptr::null::<u8>(); 2]; }\n"
     );
 }
 
@@ -32,11 +32,11 @@ fn nested_macro_inputs_are_read_from_rust_expressions() {
     for (source, expected) in [
         (
             "fn run() { format!(\"{}\", dbg!(tokio::time::sleep())); }\n",
-            "fn run() { use tokio::time::sleep;\nformat!(\"{}\", dbg!(sleep())); }\n",
+            "use tokio::time::sleep;\nfn run() { format!(\"{}\", dbg!(sleep())); }\n",
         ),
         (
             "fn run() { vec![tokio::time::sleep(duration)]; }\n",
-            "fn run() { use tokio::time::sleep;\nvec![sleep(duration)]; }\n",
+            "use tokio::time::sleep;\nfn run() { vec![sleep(duration)]; }\n",
         ),
     ] {
         let facts = [(
@@ -53,7 +53,7 @@ fn nested_macro_inputs_are_read_from_rust_expressions() {
 }
 
 #[test]
-fn conditional_macro_input_blocks_do_not_hoist_imports() {
+fn macro_input_targets_use_the_call_site_cst() {
     let source =
         "fn run() { evaluate!({ #[cfg(feature = \"timers\")] let delay = tokio::time::sleep(duration); }); }\n";
 
@@ -67,7 +67,13 @@ fn conditional_macro_input_blocks_do_not_hoist_imports() {
 
     let output = analyze(source, &facts, true);
     assert_eq!(output.issues.len(), 1);
-    assert_eq!(apply(source, &output), source);
+    assert_eq!(
+        apply(source, &output),
+        format!(
+            "use tokio::time::sleep;\n{}",
+            source.replace("tokio::time::sleep(duration)", "sleep(duration)")
+        )
+    );
 }
 
 #[test]

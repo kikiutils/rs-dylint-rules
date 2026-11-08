@@ -181,7 +181,7 @@ impl Names {
                     references.push(Reference {
                         span: segment.ident.span,
                         name: Name {
-                            id: path.id,
+                            glob: false,
                             name: segment.ident.name.to_string(),
                             namespace,
                             definition: resolution.opt_def_id(),

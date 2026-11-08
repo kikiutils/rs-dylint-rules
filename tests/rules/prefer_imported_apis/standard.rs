@@ -18,17 +18,16 @@ fn qualifies_standard_functions_and_core_reexports() -> Result<()> {
     let (_, fixed) = support::fixed(source, "")?;
     assert_eq!(
         fixed,
-        source
-            .replace("std::mem::", "mem::")
-            .replace("core::ptr::", "ptr::")
-            .replace("std::env::", "env::")
-            .replace("std::thread::", "thread::")
-            .replace("std::io::", "io::")
-            .replace("std::process::", "process::")
-            .replace(
-                "    let mut value =",
-                "    use std::mem;\nuse std::ptr;\nuse std::env;\nuse std::thread;\nuse std::io;\nuse std::process;\nlet mut value =",
-            )
+        format!(
+            "use std::mem;\nuse std::ptr;\nuse std::env;\nuse std::thread;\nuse std::io;\nuse std::process;\n{}",
+            source
+                .replace("std::mem::", "mem::")
+                .replace("core::ptr::", "ptr::")
+                .replace("std::env::", "env::")
+                .replace("std::thread::", "thread::")
+                .replace("std::io::", "io::")
+                .replace("std::process::", "process::")
+        )
     );
 
     Ok(())
@@ -76,7 +75,7 @@ pub fn command() -> command_process::Command { command_process::Command::new("ex
 }
 
 #[test]
-fn qualifies_bare_functions_and_type_aliases_with_import_cleanup() -> Result<()> {
+fn qualifies_bare_functions_and_type_aliases_without_changing_imports() -> Result<()> {
     let source = r#"use std::{process::id, io::Error as IoError};
 pub fn current() -> (fn() -> u32, u32) { (id, id()) }
 pub fn error() -> IoError { IoError::other("example") }
@@ -86,10 +85,9 @@ pub fn error() -> IoError { IoError::other("example") }
     assert_eq!(
         fixed,
         format!(
-            "use std::io;\n{}",
+            "use std::process;\nuse std::io;\n{}",
             source
-                .replace("use std::{process::id, io::Error as IoError};", "")
-                .replace("{ (id, id()) }", "{ use std::process;\n(process::id, process::id()) }")
+                .replace("{ (id, id()) }", "{ (process::id, process::id()) }")
                 .replace("-> IoError", "-> io::Error")
                 .replace("IoError::other", "io::Error::other")
         )

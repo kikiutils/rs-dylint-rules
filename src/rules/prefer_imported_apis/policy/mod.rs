@@ -33,25 +33,23 @@ pub(super) struct ImportTarget {
 pub(super) struct Api {
     pub(super) definition: DefId,
     pub(super) name: String,
+    pub(super) source: String,
+    pub(super) root: Option<DefId>,
     pub(super) namespace: Namespace,
     pub(super) form: Form,
 }
 
 impl Api {
-    pub(super) fn is_direct(&self) -> bool {
-        matches!(self.form, Form::Direct | Form::Replace { .. })
-    }
-
     pub(super) fn replaces_type(&self) -> bool {
         matches!(self.form, Form::Replace { .. })
     }
 
     pub(super) fn full_path(&self) -> Option<String> {
-        let Form::Qualified { qualifier, member } = &self.form else {
-            return None;
-        };
-
-        Some(format!("{}::{member}", qualifier.source))
+        match &self.form {
+            Form::Direct => Some(self.source.clone()),
+            Form::Qualified { qualifier, member } => Some(format!("{}::{member}", qualifier.source)),
+            Form::Replace { target } => target.as_ref().map(|target| target.source.to_owned()),
+        }
     }
 
     pub(super) fn canonical(&self) -> String {

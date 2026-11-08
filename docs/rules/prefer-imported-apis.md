@@ -8,7 +8,7 @@
 
 ## 適用範圍
 
-- 檢查下列 API 與 namespace 的 imports（所有可見性），以及 imports 以外的型別、運算式、關聯項目與原始巨集呼叫路徑。
+- 檢查下列 API 與 namespace 在型別、運算式、關聯項目與原始巨集呼叫路徑中的使用點；不回報或修改既有 imports（包含公開 re-export）。
 - 遵守[共用分析範圍](../architecture.md#分析範圍)，涵蓋檔案頂層、各層 module、函式、方法、closure、async block 與其他巢狀區塊；依啟用中的 compiler facts 分析，不檢查 cfg 停用項目。
 - 以 rustc 實際解析結果辨識 API；crate 別名、依賴改名與 re-export 不改變其身分，其他來源的同名項目不受影響。巨集參數內僅處理 rustc 已解析、且能精確對應原始輸入範圍的 API 路徑，不自行猜測其他 token trees 的語意。
 - 只限制明列的 API／家族，不將自由函式政策外推至同 module 的型別、traits、方法或巨集。
@@ -21,16 +21,16 @@
 
 | 政策 | 要求 |
 | --- | --- |
-| 直接匯入 | 必須先匯入指定項目，再使用原名；禁止使用點的限定路徑及任意 alias。 |
+| 直接匯入 | 匯入指定項目並使用原名；無法安全引入短名時退回完整路徑。 |
 | 指定 namespace | 必須保留表列的 namespace，不得將成員直接匯入為裸名稱或型別 alias。 |
 | 固定 module alias | 必須以指定名稱匯入 module，成員仍保留該 namespace；即使只使用一種實作也不省略 alias。 |
 
-- 需要的 import 必須在使用點上方且可見，不要求全部提升至檔案頂層，也不補齊未使用的項目。crate root 已可由 extern prelude 使用時，不要求冗餘的 `use anyhow;`、`use serde_json;` 或 `use toml;`。
+- 需要的 binding 必須在使用點可見，不檢查既有 import 的上下位置，也不補齊未使用的項目。新增 import 通常置於所在 module 開頭，遇到 `#[cfg]` 時留在該邊界內。crate root 已可由 extern prelude 使用時，不要求冗餘的 `use anyhow;`、`use serde_json;` 或 `use toml;`。
 - 指定形式同時適用於型別標註、泛型、關聯項目存取與非呼叫用法，不限於 `fn()` 語法；不以有無 `.await` 判斷 API 來源。
 - 使用點須採表列的完整形式，而不是只要包含該 namespace 即可。例如 `std::process::id()`、`std::io::Error` 須改為 `process::id()`、`io::Error`；`confique::toml::template` 則保留表列的來源與格式前綴。此要求只作用於受管 API，不限制 `tokio::process::Command` 等未列項目。
-- 受管 API 禁止任意改名，包括使用點 namespace 的任意 alias 與冗餘的同名 `as`；固定 module alias 是明列的允許形式。module alias 若只用於未受管項目（例如 `use std::process as proc; proc::Command::new(...)`），不受此限制；透過該 alias 使用受管 API（例如 `proc::id()`）則仍違規。
-- imports 內可書寫來源路徑，但建立的 binding 仍須符合政策。規則同樣檢查公開 re-export；不因 `pub use` 放行。glob 若引入違規 binding 仍須診斷，但不全面禁止其他 glob；經解析確認的合規 binding 仍須符合上方位置要求。
-- 本規則不修改 Cargo manifest。namespace 短名發生真正衝突時，允許退回來源完整路徑；其他無法安全引入的名稱仍診斷，不自行發明 alias。
+- 受管 API 禁止任意改名，包括使用點 namespace 的任意 alias；既有 import 的冗餘同名 `as` 不另行診斷。固定 module alias 是明列的允許形式。module alias 若只用於未受管項目（例如 `use std::process as proc; proc::Command::new(...)`），不受此限制；透過該 alias 使用受管 API（例如 `proc::id()`）則仍違規。
+- 政策只套用在使用點。既有 alias、公開 re-export 與 glob 宣告原樣保留；經解析確認的合規 binding 可直接重用。
+- 本規則不修改 Cargo manifest，不自行發明 alias；短名不可用時的 fallback 見[政策例外](#政策例外)。
 
 ### 直接匯入
 
@@ -48,8 +48,8 @@
 - 這是專案的強制來源政策，不因 anyhow 是否已使用、已安裝或受 feature 限定而豁免；依賴及 feature 配置由目標專案維護。
 - 保留明確的錯誤型別參數，不將 `Result<T, E>` 任意改成預設錯誤為 `anyhow::Error` 的 `Result<T>`。`Ok`／`Err` 的一般使用不受限制；使用點的 `Result::Ok`／`Result::Err` 保留其後綴。
 - `std::io::Result`、`std::fmt::Result` 與其他 crate 自有的 Result aliases 仍依各自政策處理；使用者自訂的同名型別不視為標準 Result。
-- 不修改 Cargo manifest；anyhow 依賴或安全可見的來源名稱不可用時只診斷。已宣告但尚未使用的 `--extern anyhow` 可用於新增 import，不要求先存在 anyhow 使用點。
-- 來源 enum 與目標 anyhow type alias 分開追蹤。新 binding 只可取代本批修復涵蓋的來源 references；同名舊 import 必須確認能在同一份交易移除。公開 re-export、仍被其他模組依賴或用於 `use Result::Ok` 等 enum variant imports 的 binding 不任意替換；無法證明安全時保留診斷及原文，不影響其他 API 的獨立修復。
+- 不修改 Cargo manifest；anyhow 依賴或安全可見的來源名稱不可用時不修。已宣告但尚未使用的 `--extern anyhow` 可用於新增 import，不要求先存在 anyhow 使用點。
+- 來源 enum 與目標 anyhow type alias 分開追蹤，舊 import 不修改。例如已有 `use std::result::Result;` 時，先改為 `anyhow::Result<T, E>`；rustc 移除 unused import 後，下一輪才可新增 `use anyhow::Result;` 並使用短名。
 
 ### 標準庫 namespace
 
@@ -152,52 +152,46 @@ async fn send_later() {
 
 ## 錯誤範例
 
-以下各項均違反指定使用形式：
+以下使用點違反指定形式；原有 imports 保留，不是診斷對象：
 
 ```rust
-use std::{io::Error as IoError, process::id}; // 應保留 io::Error、process::id。
-use anyhow::{Error as AnyhowError, Result as AnyhowResult}; // 應使用 anyhow::Error，並以原名匯入 Result。
-use anstream::{stdout, stderr}; // 應直接使用 anstream::stdout()／anstream::stderr()。
-use serde_json::{Value as JsonValue, from_slice}; // 應保留 serde_json:: 前綴。
-use confique::toml::{template, FormatOptions}; // 應保留 confique::toml:: 前綴。
-use tokio::sync::mpsc::{Sender, channel}; // 應匯入 module 為 tokio_mpsc。
-use tokio::task::spawn; // 應使用 tokio_task::spawn。
+use std::process::id;
+use anyhow::Result as AnyhowResult;
 
-fn fail() -> anyhow::Result<()> { // 應先 use anyhow::Result，再使用 Result<()>。
-    anyhow::bail!("failed"); // 應先 use anyhow::bail，再使用 bail!。
+fn fail() -> AnyhowResult<()> { // 改用 Result<()>，必要時新增 use anyhow::Result;
+    let _ = id(); // 改用 process::id()，必要時新增 use std::process;
+    anyhow::bail!("failed"); // 改用 bail!()，必要時新增 use anyhow::bail;
 }
 ```
 
 ## 政策例外
 
 - prelude 的 `drop()`、`size_of()`、`size_of_val()`、`align_of()`、`align_of_val()` 不要求加上 `mem::`，不限制其限定／未限定形式。
-- namespace 的規定短名無法安全新增或重用時，允許使用該 API 的完整來源路徑，例如本地有 `mod io` 時使用 `std::io::Result`、本地有 `mod process` 時使用 `std::process::id()`。這是所有 qualified 家族共用的 fallback，不專屬於 I/O；短名可用時仍要求規定形式。來源 crate root 本身亦無法安全解析，或直接匯入項目發生衝突時，不猜測其他名稱。
+- namespace 的規定短名無法安全新增或重用時，允許使用該 API 的完整來源路徑，例如本地有 `mod io` 時使用 `std::io::Result`、本地有 `mod process` 時使用 `std::process::id()`。這是所有 qualified 家族共用的 fallback，不專屬於 I/O；短名可用時仍要求規定形式。來源 crate root 本身亦無法安全解析時不修，不猜測其他名稱。直接匯入項目亦採相同完整路徑 fallback。
 
 ## 實作限制
 
-- 無法可靠解析來源時不猜測。未限定名稱須能對應原始 import 才能檢查上方位置；不猜測由巨集或其他片段建立的 binding。不支援同名其他巨集的 textual scope／`#[macro_use]` 傳播分析。
+- 無法可靠解析來源時不猜測。名稱檢查包含 generic、value binding 與 `macro_rules!` 文字作用域；不自行展開巨集或猜測未解析的名稱。
 - 巨集輸入須能依呼叫端 edition 解析為一般 Rust 運算式，僅依 compiler facts 重讀對應的原文路徑及 attributes，保留原始呼叫所在的作用域；不跨入輸入內的巢狀 module，也不展開巨集、不掃描巨集定義本體，或根據 `stringify!` 等未執行輸入中的文字推斷 API。
 
 ## Auto-fix
 
 沿用[共用自動修正機制](../architecture.md#自動修正)與[安全邊界](../architecture.md#安全邊界)：
 
-- 優先重用可見、位於上方、名稱合規且無條件 attributes 的 binding；否則只在最近可合法插入的作用域開頭新增獨立 import，不跨越使用點的 cfg 邊界提升。不任意合併 imports。直接匯入 API 的 alias 會沿用原 import 的作用域與解析路徑。
-- 以「作用域＋binding」統一決定重用、新增、改名或移除 import，以及所有依賴它的使用點替換；每組各自形成 multipart suggestion，掛在該組第一個 issue。若組之間沿用另一組要移除的原始路徑，或修改同一條 use 宣告，就合併為同一筆修復。互不相依的組不會因其中一組失敗而一起放棄，也不再以整個檔案作為一份 fix。各組驗證成功後，共用同一 import 插入位置的 edits 會合併輸出，避免 Cargo fix 將同一位置的多筆插入視為衝突；失敗的組不加入。
-- 新 import 沿用的原始路徑 references 仍算相依性，不因原使用點被取代而移除其 binding；包含 `super::`／`crate::` 路徑。內層重用計畫中的外層 import 時仍驗證遮蔽。
-- 依解析後的名稱空間、作用域、泛型參數、bindings、references 與展開產物檢查名稱捕獲；包含 module namespace，不只檢查 leaf 名稱；grouped import 的相對分支與一般程式碼的限定路徑不被誤當成作用域中的裸名稱。module 有 glob 使用端時，不新增可能改變其 bindings 的 import；重用既有 binding 仍須安全。
-- 保留註解、attributes、泛型與存取語意；不將 import 插入前導註解與 item 之間。新增 import 置於 inner attributes／inner docs 之後、第一個 item／statement 及其附屬註解之前；檔頭 banner 與 inner attributes 內的註解不阻擋新增 import。此機制共用於所有 API 家族，不拆開文件歸屬，也不任意改走其他 re-export 路徑。排版完全交由 rustfmt：新增 import 只插入 `use …;` 與 LF 換行，刪除只移除宣告範圍，不補換行、縮排或清理剩餘空白。
-- 可逐一將裸名稱或 leaf alias 的使用點改為指定 namespace，例如 `id()` → `process::id()`、`IoError::other(...)` → `io::Error::other(...)`，仍須通過相同名稱解析與 cfg 安全檢查。
-- 能對回原文的巨集參數使用點沿用相同修正流程，例如 `path!(current_dir().ok()?)` → `path!(env::current_dir().ok()?)`；新增 import 仍在原始程式碼作用域內，不插入巨集 token tree。
-- 同一原文被巨集重複使用時，須確認各展開位置的原始解析身分與名稱安全性；無法同時保留所有使用點語意時僅診斷。
-- 只有在所有依賴均已由同一份修復取代、沒有其他模組或 glob 使用端依賴、也沒有未處理的停用程式碼／巨集輸入／attribute 字串 references 時，才移除違規的 private import。追蹤 import 的中間限定名稱與 compiler 回報的原始 bang／attribute／derive 巨集前綴；非受管巨集也可構成名稱相依性，但不因此改寫其呼叫。已解析的 compiler references 以語意結果為準；文字掃描只補足沒有 facts 的區域，不將無關的限定路徑段或一般字串當作舊 binding 的依賴。attribute 字串仍保留保守判斷。分組只移除必要分支並保留其他原文；無法保留註解歸屬時保留宣告。冗餘的同名 alias 與可安全轉回原名的 trait alias 可原地修正。
-- 公開 re-export 不改名或移除，也不展開 glob。這些安全邊界可能使原 import 診斷或 unused warning 保留；已使用合規名稱但 import 位於下方時仍僅診斷。
-- 型別／API 路徑替換可穿過經 compiler facts 確認的 builtin、serde、thiserror、derive_more、strum 與 is_empty derives 及對應 helper attributes，包含 `cfg_attr` 包住的 derives 與 helpers。helper metadata 依「定義 crate＋derive 名稱」從共用登記表取得，不因此允許搬移定義或改變 derive 順序。未知 attributes 仍保留屏障。
+- 回報與修正共用 `decide(access)`：規定形式 `Canonical`、不插入 import 的完整路徑 `FullPath`、不修的 `Skip`。符合決策的使用點不再回報；同一位置修正後再次分析應為零 issue。
+- 只改使用點、只新增 `use 路徑;` 或 `use 路徑 as 別名;`；既有 `use` 一律不碰。unused import 交給 rustc，排序、合併與排版交給其他規則及 rustfmt。
+- target 通常是所在檔案或 inline module，沒有 cfg 的函式內使用亦提升到 module。遇到最近的 `#[cfg]` 邊界時，取邊界內包含使用點的最外層函式本體或 block：cfg fn 取本體，cfg block 取該 block，cfg impl／trait 取所在方法本體；沒有 block（例如 initializer 不是 block 的 cfg let）則退回完整路徑。`cfg_attr` 不算此邊界。
+- 固定插在 target 開頭（檔頭或 `{` 之後），僅略過開頭的 inner attributes／inner docs。不分析既有 use 排列，不拆開 item 與其前導註解。同 target 的多條 imports 合併為一筆插入。
+- 新增或重用名稱前，驗證同 namespace 的定義（CST 所有 cfg 分支及 compiler 展開產物）、整個 target 與 `use super::*` 子 module 的既有引用，以及使用點和 target 間更近的 item／use、generic、let 與 macro 遮蔽。來源 crate root 必須對應 extern prelude 的直接依賴（可透過已解析、指向該直接依賴的本地 crate alias），且未被其他本地同名定義遮蔽；不安全則退回完整路徑，連 root 都不安全則不修。
+- 所有使用點改寫與新增 imports 合成同檔唯一的 multipart Fix，掛在第一個 issue，確保互相依賴的修改一同套用。與其他規則編輯重疊時可能需下一輪才能套用。
+- 保留泛型與關聯路徑後綴；使用點範圍含註解或位於 derive／attribute 輸入內時不修。所在 item 的已知 builtin／derive／helper attributes 可由 compiler facts 放行；未知 attribute macro 仍保留屏障。
+- 能精確對回原文的巨集參數使用點依原始呼叫外圍的 CST 決定 target，不在 token tree 插入 use，也不處理 macro 定義本體。相同原文被多次展開時，名稱安全檢查必須對每個 compiler origin 成立。
+- 同名來源替換可能需多輪完成：先使用完整路徑，待 rustc 清除舊 unused import 後，再引入短名。每輪修復均須維持可編譯與既有引用語意；未啟用 cfg 分支的使用點留待相應平台／設定處理。
 
 ## 驗證與安全性依據
 
-- 固定工具鏈見 [`rust-toolchain.toml`](../../rust-toolchain.toml)。單元測試依政策、分析與 import edits 分組於 [`policy/tests.rs`](../../src/rules/prefer_imported_apis/policy/tests.rs)、[`analysis/tests/`](../../src/rules/prefer_imported_apis/analysis/tests/mod.rs) 與 [`fix/tests/imports.rs`](../../src/rules/prefer_imported_apis/fix/tests/imports.rs)；整合測試依 API 家族與安全邊界分組於 [`tests/rules/prefer_imported_apis/`](../../tests/rules/prefer_imported_apis/mod.rs)。測試檔案的存在不等同於特定 compiler／依賴版本已通過驗證。
-- 已在 Linux host、`nightly-2026-10-15` 驗證單元、規則整合、跨規則與來源情境測試。家族 fixtures 使用 anyhow `1.0.104`、Tokio `1.54.1`、anstream `1.0.0`、serde_json `1.0.154`、toml `1.2.1`、rmp-serde `1.3.1`、postcard `1.1.3`、ciborium `0.2.2`、hex `0.4.3` 與 confique `0.4.0`（TOML／YAML／JSON5）；另以 rusqlite `0.41.1`（bundled）驗證 Error 政策；系統家族 fixtures 使用 rustix `1.1.6`、libc `0.2.191`，derive 路徑修復包含 thiserror `2.0.21`。不因此宣稱其他平台、版本或所有 feature 組合皆已驗證。
+- 固定工具鏈見 [`rust-toolchain.toml`](../../rust-toolchain.toml)。單元測試依政策與分析分組於 [`policy/tests.rs`](../../src/rules/prefer_imported_apis/policy/tests.rs)、[`analysis/tests/`](../../src/rules/prefer_imported_apis/analysis/tests/mod.rs)；整合測試依 API 家族與安全邊界分組於 [`tests/rules/prefer_imported_apis/`](../../tests/rules/prefer_imported_apis/mod.rs)。測試檔案的存在不等同於特定 compiler／依賴版本已通過驗證。
+- 工具鏈固定為 `nightly-2026-10-15`；家族 fixtures 使用 anyhow `1.0.104`、Tokio `1.54.1`、anstream `1.0.0`、serde_json `1.0.154`、toml `1.2.1`、rmp-serde `1.3.1`、postcard `1.1.3`、ciborium `0.2.2`、hex `0.4.3` 與 confique `0.4.0`（TOML／YAML／JSON5）；另以 rusqlite `0.41.1`（bundled）驗證 Error 政策；系統家族 fixtures 使用 rustix `1.1.6`、libc `0.2.191`，derive 路徑修復包含 thiserror `2.0.21`。不因此宣稱其他平台、版本或所有 feature 組合皆已驗證。
 - 政策參考：標準庫 [prelude](https://doc.rust-lang.org/std/prelude/v1/index.html)、[io::Result](https://doc.rust-lang.org/std/io/type.Result.html)，以及 Tokio [time](https://docs.rs/tokio/latest/tokio/time/)／[task](https://docs.rs/tokio/latest/tokio/task/)。這些文件用於核對 API 與慣例，不代表本專案的固定 alias 或所有改寫已獲安全驗證。
 - 修正的驗證項目包括修正前後編譯／行為、完整修正原文比對與再次 lint 的冪等性；不將個別案例外推為所有 API 均可安全改寫。升級 compiler 或依賴時須重新查核解析身分與修正結果。
 

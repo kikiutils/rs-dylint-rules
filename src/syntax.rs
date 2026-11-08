@@ -32,35 +32,6 @@ pub(crate) fn is_scope(node: &SyntaxNode) -> bool {
     )
 }
 
-pub(crate) fn scope(node: &SyntaxNode) -> Option<SyntaxNode> {
-    node.ancestors().find(is_scope)
-}
-
-pub(crate) fn visible_scopes(node: &SyntaxNode) -> Vec<SyntaxNode> {
-    let mut scopes = Vec::new();
-    for scope in node.ancestors().filter(is_scope) {
-        let module = scope.kind() != SyntaxKind::STMT_LIST;
-        scopes.push(scope);
-        if module {
-            break;
-        }
-    }
-
-    scopes
-}
-
-pub(crate) fn has_conditional_attribute(node: &SyntaxNode) -> bool {
-    node.children()
-        .filter_map(ast::Attr::cast)
-        .any(|attribute| conditional_attribute(&attribute))
-}
-
-pub(crate) fn crosses_conditional(node: &SyntaxNode, until: &SyntaxNode) -> bool {
-    node.ancestors()
-        .take_while(|ancestor| ancestor != until)
-        .any(|ancestor| has_conditional_attribute(&ancestor))
-}
-
 // These attributes do not inspect the rewritten item tokens.
 // Check every cfg_attr branch, including branches inactive in this compilation.
 pub(crate) fn inert_meta(meta: ast::Meta) -> bool {
@@ -148,20 +119,6 @@ pub(crate) fn protected_with(node: &SyntaxNode, extra_safe: impl Fn(&ast::Attr) 
     })
 }
 
-pub(crate) fn conditional_attribute(attribute: &ast::Attr) -> bool {
-    attribute.meta().is_some_and(conditional_meta)
-}
-
-fn conditional_meta(meta: ast::Meta) -> bool {
-    if let ast::Meta::CfgAttrMeta(meta) = meta {
-        return meta.metas().any(conditional_meta);
-    }
-
-    // cfg_attr changes item presence only when it can introduce cfg. Derives
-    // and helpers are checked separately before changing any item paths.
-    meta.simple_name().is_some_and(|name| name == "cfg")
-}
-
 // Splitting an item must not duplicate lint expectation IDs or their scope.
 pub(crate) fn has_expectation(meta: ast::Meta) -> bool {
     if let ast::Meta::CfgAttrMeta(meta) = meta {
@@ -237,30 +194,4 @@ pub(crate) fn derive_list_meta(meta: ast::Meta) -> Option<(ast::TokenTree, TextR
     }
 
     Some((tree, inner, paths))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::test_support::parse;
-
-    #[test]
-    fn conditional_attributes_only_track_item_presence() {
-        for (attribute, conditional) in [
-            ("#[cfg(feature = \"active\")]", true),
-            ("#[cfg_attr(feature = \"active\", cfg(unix))]", true),
-            ("#[cfg_attr(all(), cfg_attr(all(), cfg(unix)))]", true),
-            ("#[cfg_attr(feature = \"serde\", derive(serde::Serialize))]", false),
-            ("#[cfg_attr(all(), cfg_attr(all(), allow(dead_code)))]", false),
-        ] {
-            let source = format!("{attribute}\nstruct Value;");
-            let root = parse(&source);
-            let item = root
-                .children()
-                .find_map(ast::Struct::cast)
-                .unwrap_or_else(|| panic!("missing struct"));
-
-            assert_eq!(has_conditional_attribute(item.syntax()), conditional, "{attribute}");
-        }
-    }
 }

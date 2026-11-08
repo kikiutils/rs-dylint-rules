@@ -10,6 +10,7 @@ use rustc_span::def_id::{
 use super::{
     Api,
     Form,
+    ImportTarget,
     Qualifier,
     families::{
         self,
@@ -29,11 +30,18 @@ fn canonical_forms_keep_the_namespace_and_member_independent() {
     let mut api = Api {
         definition: definition(),
         name: "TryRecvError".to_owned(),
+        source: "tokio::sync::mpsc::error::TryRecvError".to_owned(),
+        root: Some(definition()),
         namespace: Namespace::TypeNS,
         form: Form::Direct,
     };
 
     assert_eq!(api.canonical(), "TryRecvError");
+    assert_eq!(
+        api.full_path().as_deref(),
+        Some("tokio::sync::mpsc::error::TryRecvError")
+    );
+
     api.form = Form::Qualified {
         qualifier: Qualifier {
             source: "tokio::sync::mpsc",
@@ -46,6 +54,29 @@ fn canonical_forms_keep_the_namespace_and_member_independent() {
     };
 
     assert_eq!(api.canonical(), "tokio_mpsc::error::TryRecvError");
+}
+
+#[test]
+fn replacement_full_path_requires_an_available_target() {
+    let mut api = Api {
+        definition: definition(),
+        name: "Result".to_owned(),
+        source: "anyhow::Result".to_owned(),
+        root: None,
+        namespace: Namespace::TypeNS,
+        form: Form::Replace { target: None },
+    };
+
+    assert_eq!(api.full_path(), None);
+    api.form = Form::Replace {
+        target: Some(ImportTarget {
+            source: "anyhow::Result",
+            definition: None,
+            root: None,
+        }),
+    };
+
+    assert_eq!(api.full_path().as_deref(), Some("anyhow::Result"));
 }
 
 #[test]

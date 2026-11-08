@@ -11,10 +11,11 @@ use rustc_span::def_id::{
 
 mod direct;
 mod imports;
+mod inner_docs;
 mod macro_inputs;
 mod qualified;
 mod safety;
-mod transactions;
+mod targets;
 
 use super::super::{
     model::{
@@ -45,6 +46,12 @@ fn definition() -> DefId {
 fn api(name: &str, namespace: Namespace, form: Form) -> Api {
     Api {
         definition: definition(),
+        source: if name == "sleep" {
+            "tokio::time::sleep".to_owned()
+        } else {
+            format!("anyhow::{name}")
+        },
+        root: Some(definition()),
         name: name.to_owned(),
         namespace,
         form,
@@ -78,15 +85,10 @@ fn analyze(source: &str, facts: &[(TextRange, Event)], free: bool) -> RuleOutput
         &parse(source),
         source,
         ra_ap_syntax::Edition::Edition2024,
-        facts
-            .iter()
-            .map(|(range, event)| (*range, rustc_hir::CRATE_HIR_ID, event)),
-        &super::super::fix::Checks {
-            name: &|_| free,
-            remove: &|_| true,
+        facts.iter().map(|(range, event)| (*range, event)),
+        &super::Checks {
+            name: &|request| free && (!request.reuse || request.external),
             protected: &crate::syntax::protected,
-            reference: &|_| false,
-            depends: &|_| false,
         },
     )
 }

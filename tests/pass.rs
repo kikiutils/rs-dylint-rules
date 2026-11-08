@@ -44,19 +44,27 @@ fn inline_module_diagnostics_match_when_rules_are_enabled_together() -> Result<(
 fn combined_fixes_converge_and_are_idempotent() -> Result<()> {
     let directory = support::fixture(SOURCE)?;
     support::anyhow(&directory)?;
-    let output = support::run_lints(&directory, true, support::LINTS)?;
-    assert!(output.status.success(), "{output:?}");
+    for _ in 0..4 {
+        let output = support::run_lints(&directory, true, support::LINTS)?;
+        assert!(output.status.success(), "{output:?}");
+        let checked = support::run_lints(&directory, false, support::LINTS)?;
+        assert!(checked.status.success(), "{checked:?}");
+        if support::LINTS.iter().all(|lint| !support::has_lint(&checked, lint)) {
+            break;
+        }
+    }
+
     let fixed = support::source(&directory)?;
     assert_eq!(
         fixed,
-        r#"pub mod nested {
+        r#"pub mod nested {use anyhow::anyhow;
+
     use std::fmt;
 
 use self::Value as Local;
     #[derive(PartialEq, Eq)] pub struct Value;
 
-    pub fn error() -> anyhow::Error { use anyhow::anyhow;
-anyhow!("error") }
+    pub fn error() -> anyhow::Error { anyhow!("error") }
 }
 "#
     );

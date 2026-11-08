@@ -22,7 +22,6 @@ fn behavior() {
     assert_eq!(
         fixed,
         source
-            .replace("use rusqlite as sqlite;\n", "")
             .replace(
                 "-> sqlite::Error { sqlite::Error::",
                 "-> rusqlite::Error { rusqlite::Error::"
@@ -46,7 +45,7 @@ pub fn check(_: Option<rusqlite::Error>, _: Option<sqlite::Connection>) -> Sqlit
 }
 
 #[test]
-fn qualifies_bare_and_aliased_errors_and_removes_private_imports() -> Result<()> {
+fn qualifies_bare_and_aliased_errors_and_preserves_private_imports() -> Result<()> {
     for (import, name) in [
         ("use rusqlite::Error;", "Error"),
         ("use rusqlite::Error as SqliteError;", "SqliteError"),
@@ -58,7 +57,7 @@ fn qualifies_bare_and_aliased_errors_and_removes_private_imports() -> Result<()>
 
         assert_eq!(
             fixed,
-            "pub fn missing() -> rusqlite::Error { rusqlite::Error::QueryReturnedNoRows }\n"
+            format!("{import}\npub fn missing() -> rusqlite::Error {{ rusqlite::Error::QueryReturnedNoRows }}\n")
         );
     }
 

@@ -14,13 +14,7 @@ pub fn standard() -> Result<(), u8> { Ok(()) }
 "#;
 
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
-    assert_eq!(
-        fixed,
-        format!(
-            "use anyhow::Result;\n{}",
-            source.replace("use std::result::Result;\n", "")
-        )
-    );
+    assert_eq!(fixed, source.replace("-> Result<(), u8>", "-> anyhow::Result<(), u8>"));
 
     Ok(())
 }
@@ -34,7 +28,7 @@ fn imports_anyhow_result_for_the_standard_prelude_type() -> Result<()> {
 }
 
 #[test]
-fn rewrites_standard_result_spellings_and_removes_private_aliases() -> Result<()> {
+fn rewrites_standard_result_spellings_and_preserves_private_aliases() -> Result<()> {
     let source = r"use std::result::Result as StandardResult;
 pub fn standard() -> std::result::Result<(), u8> { std::result::Result::Ok(()) }
 pub fn core() -> core::result::Result<(), u16> { Ok(()) }
@@ -44,37 +38,13 @@ pub fn aliased() -> StandardResult<(), u32> { Ok(()) }
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
     assert_eq!(
         fixed,
-        source
-            .replace("use std::result::Result as StandardResult;", "use anyhow::Result;\n")
-            .replace("std::result::Result", "Result")
-            .replace("core::result::Result", "Result")
-            .replace("StandardResult<", "Result<")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn replaces_a_private_standard_result_import_with_anyhow() -> Result<()> {
-    let source = "use std::result::Result;\npub fn standard() -> Result<(), u8> { Ok(()) }\n";
-    let (_, fixed) = support::fixed(source, &support::anyhow())?;
-    assert_eq!(
-        fixed,
-        source.replace("use std::result::Result;", "use anyhow::Result;\n")
-    );
-
-    Ok(())
-}
-
-#[test]
-fn replaces_grouped_standard_result_imports_without_removing_siblings() -> Result<()> {
-    let source = "use std::{fmt::Debug, result::Result};\npub fn standard() -> Result<(), u8> { Ok(()) }\n";
-    let (_, fixed) = support::fixed(source, &support::anyhow())?;
-    assert_eq!(
-        fixed,
-        source.replace(
-            "use std::{fmt::Debug, result::Result};",
-            "use anyhow::Result;\nuse std::{fmt::Debug};",
+        format!(
+            "use anyhow::Result;\n{}",
+            source
+                .replace("-> std::result::Result", "-> Result")
+                .replace("{ std::result::Result::", "{ Result::")
+                .replace("core::result::Result", "Result")
+                .replace("-> StandardResult", "-> Result")
         )
     );
 
@@ -82,19 +52,37 @@ fn replaces_grouped_standard_result_imports_without_removing_siblings() -> Resul
 }
 
 #[test]
-fn enum_variant_imports_keep_the_standard_binding_and_diagnostic() -> Result<()> {
-    support::unchanged(
-        "use std::result::Result;\nuse Result::Ok;\npub fn standard() -> Result<(), u8> { Ok(()) }\n",
-        &support::anyhow(),
-    )
+fn private_standard_result_import_forces_the_full_anyhow_path() -> Result<()> {
+    let source = "use std::result::Result;\npub fn standard() -> Result<(), u8> { Ok(()) }\n";
+    let (_, fixed) = support::fixed(source, &support::anyhow())?;
+    assert_eq!(fixed, source.replace("-> Result", "-> anyhow::Result"));
+
+    Ok(())
 }
 
 #[test]
-fn macro_generated_standard_result_imports_are_diagnostic_only() -> Result<()> {
-    support::unchanged(
-        "macro_rules! imports { () => { use std::result::Result; } }\nimports!();\npub fn standard() -> Result<(), u8> { Ok(()) }\n",
-        &support::anyhow(),
-    )
+fn grouped_standard_result_imports_force_the_full_anyhow_path() -> Result<()> {
+    let source = "use std::{fmt::Debug, result::Result};\npub fn standard() -> Result<(), u8> { Ok(()) }\n";
+    let (_, fixed) = support::fixed(source, &support::anyhow())?;
+    assert_eq!(fixed, source.replace("-> Result", "-> anyhow::Result"));
+
+    Ok(())
+}
+
+#[test]
+fn enum_variant_imports_keep_the_standard_binding() -> Result<()> {
+    let source = "use std::result::Result;\nuse Result::Ok;\npub fn standard() -> Result<(), u8> { Ok(()) }\n";
+    let (_, fixed) = support::fixed(source, &support::anyhow())?;
+    assert_eq!(fixed, source.replace("-> Result", "-> anyhow::Result"));
+    Ok(())
+}
+
+#[test]
+fn macro_generated_standard_result_imports_force_the_full_anyhow_path() -> Result<()> {
+    let source = "macro_rules! imports { () => { use std::result::Result; } }\nimports!();\npub fn standard() -> Result<(), u8> { Ok(()) }\n";
+    let (_, fixed) = support::fixed(source, &support::anyhow())?;
+    assert_eq!(fixed, source.replace("-> Result", "-> anyhow::Result"));
+    Ok(())
 }
 
 #[test]
@@ -103,7 +91,12 @@ fn protected_result_imports_do_not_block_unrelated_api_fixes() -> Result<()> {
     let (_, fixed) = support::rewritten(source, &support::anyhow())?;
     assert_eq!(
         fixed,
-        source.replace("{ std::process::id()", "{ use std::process;\nprocess::id()")
+        format!(
+            "use std::process;\n{}",
+            source
+                .replace("-> Result", "-> anyhow::Result")
+                .replace("std::process::id", "process::id")
+        )
     );
 
     Ok(())
@@ -111,21 +104,18 @@ fn protected_result_imports_do_not_block_unrelated_api_fixes() -> Result<()> {
 
 #[test]
 fn result_migrations_distinguish_same_definition_bindings_by_scope() -> Result<()> {
-    for (source, expected) in [
-        (
-            "use std::result::Result;\npub fn outer() -> Result<(), u8> { Ok(()) }\nmod inner {\n    use std::result::Result; // preserve inner binding\n    pub fn inner() -> Result<(), u8> { Ok(()) }\n}\n",
-            "use anyhow::Result;\n\npub fn outer() -> Result<(), u8> { Ok(()) }\nmod inner {\n    use std::result::Result; // preserve inner binding\n    pub fn inner() -> Result<(), u8> { Ok(()) }\n}\n",
-        ),
-        (
-            "use std::result::Result; // preserve module binding\npub fn module() -> self::Result<(), u8> { Ok(()) }\npub fn local() {\n    use std::result::Result;\n    let _: Result<(), u8> = Ok(());\n}\n",
-            "use std::result::Result; // preserve module binding\npub fn module() -> self::Result<(), u8> { Ok(()) }\npub fn local() {\n    use anyhow::Result;\n\n    let _: Result<(), u8> = Ok(());\n}\n",
-        ),
-        (
-            "use std::result::Result; // preserve module binding\npub fn outer() -> Result<(), u8> { Ok(()) }\npub fn inner() { let _: std::result::Result<(), u8> = Ok(()); }\n",
-            "use std::result::Result; // preserve module binding\npub fn outer() -> Result<(), u8> { Ok(()) }\npub fn inner() { use anyhow::Result;\nlet _: Result<(), u8> = Ok(()); }\n",
-        ),
+    for source in [
+        "use std::result::Result;\npub fn outer() -> Result<(), u8> { Ok(()) }\nmod inner {\n    use std::result::Result; // preserve inner binding\n    pub fn inner() -> Result<(), u8> { Ok(()) }\n}\n",
+        "use std::result::Result; // preserve module binding\npub fn module() -> self::Result<(), u8> { Ok(()) }\npub fn local() {\n    use std::result::Result;\n    let _: Result<(), u8> = Ok(());\n}\n",
+        "use std::result::Result; // preserve module binding\npub fn outer() -> Result<(), u8> { Ok(()) }\npub fn inner() { let _: std::result::Result<(), u8> = Ok(()); }\n",
     ] {
-        let (_, fixed) = support::rewritten(source, &support::anyhow())?;
+        let (_, fixed) = support::fixed(source, &support::anyhow())?;
+        let expected = source
+            .replace("-> Result", "-> anyhow::Result")
+            .replace("-> self::Result", "-> anyhow::Result")
+            .replace("let _: Result", "let _: anyhow::Result")
+            .replace("let _: std::result::Result", "let _: anyhow::Result");
+
         assert_eq!(fixed, expected);
     }
 
@@ -145,15 +135,15 @@ pub fn standard() -> std::result::Result<(), u8> { Ok(()) }
 }
 
 #[test]
-fn conflicting_local_result_names_keep_the_diagnostic_without_a_fix() -> Result<()> {
-    support::unchanged(
-        "pub struct Result;\npub fn standard() -> std::result::Result<(), u8> { Ok(()) }\n",
-        &support::anyhow(),
-    )
+fn conflicting_local_result_names_force_the_full_anyhow_path() -> Result<()> {
+    let source = "pub struct Result;\npub fn standard() -> std::result::Result<(), u8> { Ok(()) }\n";
+    let (_, fixed) = support::fixed(source, &support::anyhow())?;
+    assert_eq!(fixed, source.replace("std::result::Result", "anyhow::Result"));
+    Ok(())
 }
 
 #[test]
-fn standard_result_without_an_anyhow_dependency_is_diagnostic_only() -> Result<()> {
+fn standard_result_without_an_anyhow_dependency_is_skipped() -> Result<()> {
     for source in [
         "pub fn standard() -> Result<(), u8> { Ok(()) }\n",
         "#![no_std]\npub fn standard() -> core::result::Result<(), u8> { Ok(()) }\n",

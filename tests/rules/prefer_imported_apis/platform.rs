@@ -15,14 +15,10 @@ pub fn shared(_: IoSlice<'_>, _: std::io::IoSliceMut<'_>) {}
         fixed,
         source
             .replace(
-                "use rustix::io::{Errno, Result as RawResult, write as write_fd, IoSlice};",
-                "use rustix::io::{ IoSlice};"
-            )
-            .replace(
                 "-> Errno { Errno::INTR",
                 "-> rustix::io::Errno { rustix::io::Errno::INTR"
             )
-            .replace("RawResult", "rustix::io::Result")
+            .replace("-> RawResult", "-> rustix::io::Result")
             .replace("write_fd(", "rustix::io::write(")
     );
 
@@ -49,7 +45,7 @@ pub async fn transfer() -> Result<Vec<u8>> {
         source
             .replace(
                 "use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, duplex, Error, ErrorKind, Result};",
-                "use std::io;\nuse tokio::io::{AsyncReadExt, AsyncWriteExt};"
+                "use std::io;\nuse tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader, duplex, Error, ErrorKind, Result};"
             )
             .replace("-> Result", "-> io::Result")
             .replace("= duplex(", "= tokio::io::duplex(")
@@ -72,10 +68,6 @@ pub fn shared(_: *mut c_void, _: std::ffi::c_int) { let _ = syscall as *const ()
     assert_eq!(
         fixed,
         source
-            .replace(
-                "use libc::{fork, syscall, AT_EMPTY_PATH, c_int, c_void};",
-                "use libc::{ c_int, c_void};"
-            )
             .replace("{ fork() }", "{ libc::fork() }")
             .replace("{ AT_EMPTY_PATH }", "{ libc::AT_EMPTY_PATH }")
             .replace("= syscall as", "= libc::syscall as")
@@ -98,12 +90,11 @@ pub fn shared(_: IoSlice<'_>) {}
     assert_eq!(
         fixed,
         source
-            .replace("use std::io::Result as IoResult;", "use std::io;\n")
             .replace(
-                "use rustix::{io::{Errno, write as write_fd, IoSlice}};",
-                "use rustix::{io::{ IoSlice}};"
+                "use std::io::Result as IoResult;",
+                "use std::io;\nuse std::io::Result as IoResult;"
             )
-            .replace("IoResult", "io::Result")
+            .replace("-> IoResult", "-> io::Result")
             .replace(
                 "-> Errno { Errno::INTR",
                 "-> rustix::io::Errno { rustix::io::Errno::INTR"

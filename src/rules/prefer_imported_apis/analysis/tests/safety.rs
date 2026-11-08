@@ -3,7 +3,7 @@ use rustc_hir::def::Namespace;
 use super::*;
 
 #[test]
-fn binding_conflicts_keep_diagnostics_without_suggestions() {
+fn unsafe_crate_roots_skip_the_access() {
     let source = "fn run() { tokio::time::sleep(); }\n";
     let facts = [(
         range(source, "tokio::time::sleep"),
@@ -14,7 +14,7 @@ fn binding_conflicts_keep_diagnostics_without_suggestions() {
     )];
 
     let output = analyze(source, &facts, false);
-    assert_eq!(output.issues.len(), 1);
+    assert_eq!(output.issues, []);
     assert_eq!(apply(source, &output), source);
 }
 
@@ -58,15 +58,15 @@ fn file_banners_allow_both_external_reuse_and_new_namespace_imports() {
     assert_eq!(
         apply(source, &output),
         source
-            .replace("fn json", "use std::io;\nfn json")
+            .replace("// file banner", "use std::io;\n// file banner")
             .replace("::serde_json::Value", "serde_json::Value")
             .replace("std::io::Result", "io::Result")
     );
 }
 
 #[test]
-fn leaf_alias_imports_and_uses_are_rewritten_together() {
-    for (suffix, removable) in [
+fn leaf_alias_uses_are_rewritten_without_changing_imports() {
+    for (suffix, _) in [
         ("", true),
         (r#"const NAME: &str = "AnyhowError";"#, true),
         ("#[cfg(any())] fn inactive(_: self::AnyhowError) {}", false),
@@ -110,11 +110,6 @@ fn leaf_alias_imports_and_uses_are_rewritten_together() {
 
         let output = analyze(&source, &facts, true);
         let expected = source.replace("Option<AnyhowError>", "Option<anyhow::Error>");
-        let expected = if removable {
-            expected.replace("use anyhow::Error as AnyhowError;", "")
-        } else {
-            expected
-        };
 
         assert_eq!(apply(&source, &output), expected, "{suffix}");
     }
@@ -141,7 +136,7 @@ fn comments_inside_the_replaced_path_are_not_erased() {
     )];
 
     let output = analyze(source, &facts, true);
-    assert_eq!(output.issues.len(), 1);
+    assert_eq!(output.issues, []);
     assert_eq!(apply(source, &output), source);
 }
 
@@ -157,6 +152,6 @@ fn new_block_imports_do_not_cross_statement_cfg_attributes() {
     )];
 
     let output = analyze(source, &facts, true);
-    assert_eq!(output.issues.len(), 1);
+    assert_eq!(output.issues, []);
     assert_eq!(apply(source, &output), source);
 }

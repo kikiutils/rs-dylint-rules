@@ -3,24 +3,34 @@ use anyhow::Result;
 use super::support;
 
 #[test]
-fn does_not_hoist_imports_out_of_conditional_statements() -> Result<()> {
-    for attribute in [
-        r#"#[cfg(feature = "timers")]"#,
-        r#"#[cfg_attr(not(feature = "timers"), cfg(any()))]"#,
-    ] {
-        let source = format!(
-            "pub fn run() {{\n    {attribute}\n    let delay = tokio::time::sleep(std::time::Duration::ZERO);\n}}\n"
-        );
-
-        let directory = support::fixture(&source, &support::timers_feature())?;
-        let output = crate::support::run(&directory, true, support::LINT)?;
-        assert!(output.status.success(), "{output:?}");
-        assert!(crate::support::has_lint(&output, support::LINT), "{output:?}");
-        assert_eq!(crate::support::source(&directory)?, source, "{output:?}");
-        support::check_without_timers(&directory)?;
-    }
+fn cfg_function_imports_stay_inside_the_function_body() -> Result<()> {
+    let source = "#[cfg(all())]\npub fn current() -> u32 { std::process::id() }\n";
+    let (_, fixed) = support::fixed(source, "")?;
+    assert_eq!(
+        fixed,
+        source.replace("{ std::process::id", "{use std::process;\n process::id")
+    );
 
     Ok(())
+}
+
+#[test]
+fn cfg_statements_without_blocks_fall_back_to_compliant_full_paths() -> Result<()> {
+    let source = r#"use std::process::id;
+pub fn current() -> u32 {
+    #[cfg(all())]
+    let pid = id();
+    pid
+}
+pub fn run() {
+    #[cfg(feature = "timers")]
+    let delay = tokio::time::sleep(std::time::Duration::ZERO);
+}
+"#;
+
+    let (directory, fixed) = support::fixed(source, &support::timers_feature())?;
+    assert_eq!(fixed, source.replace("let pid = id()", "let pid = std::process::id()"));
+    support::check_without_timers(&directory)
 }
 
 #[test]
@@ -34,14 +44,14 @@ fn keeps_new_imports_inside_conditional_initializer_blocks() -> Result<()> {
     let (directory, fixed) = support::fixed(source, &support::timers_feature())?;
     assert_eq!(
         fixed,
-        source.replace("{ tokio::time::sleep", "{ use tokio::time::sleep;\nsleep")
+        source.replace("{ tokio::time::sleep", "{use tokio::time::sleep;\n sleep")
     );
 
     support::check_without_timers(&directory)
 }
 
 #[test]
-fn reuses_existing_bindings_inside_conditional_statements() -> Result<()> {
+fn full_paths_in_nested_cfg_statements_remain_unchanged_despite_existing_imports() -> Result<()> {
     let source = r#"#[cfg(feature = "timers")]
 pub fn run() {
     use tokio::time::sleep;
@@ -50,11 +60,7 @@ pub fn run() {
 }
 "#;
 
-    let (directory, fixed) = support::fixed(source, &support::timers_feature())?;
-    assert_eq!(
-        fixed,
-        source.replace("let delay = tokio::time::sleep", "let delay = sleep")
-    );
-
+    let directory = support::fixture(source, &support::timers_feature())?;
+    support::clean(&directory)?;
     support::check_without_timers(&directory)
 }

@@ -27,7 +27,7 @@ impl Names {
         }
 
         self.bindings.push(Name {
-            id,
+            glob: false,
             name: name.to_owned(),
             namespace,
             definition: resolution.opt_def_id(),
@@ -44,7 +44,7 @@ impl Names {
         };
 
         self.bindings.push(Name {
-            id: parameter.hir_id,
+            glob: false,
             name: parameter.name.ident().name.to_string(),
             namespace,
             definition: None,
@@ -81,7 +81,7 @@ impl Names {
             .unwrap_or_else(|| lexical_scope(cx, pattern.hir_id));
 
         self.bindings.push(Name {
-            id,
+            glob: false,
             name: ident.name.to_string(),
             namespace: Namespace::ValueNS,
             definition: None,
@@ -90,9 +90,17 @@ impl Names {
         });
     }
 
-    pub(crate) fn glob(&mut self, cx: &LateContext<'_>, definition: DefId) {
+    pub(crate) fn glob(&mut self, cx: &LateContext<'_>, id: hir::HirId, definition: DefId) {
         if let Some(local) = definition.as_local() {
-            self.glob_sources.insert(cx.tcx.local_def_id_to_hir_id(local));
+            self.globs.push((cx.tcx.local_def_id_to_hir_id(local), module(cx, id)));
+        }
+    }
+
+    pub(crate) fn glob_binding(&mut self, cx: &LateContext<'_>, id: hir::HirId, name: &str, resolution: Res) {
+        let before = self.bindings.len();
+        self.binding(cx, id, name, resolution);
+        if let Some(binding) = self.bindings.get_mut(before) {
+            binding.glob = true;
         }
     }
 

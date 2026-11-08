@@ -131,6 +131,8 @@ impl Catalog {
             Api {
                 definition,
                 name: "Result".to_owned(),
+                source: "anyhow::Result".to_owned(),
+                root: target.as_ref().and_then(|target| target.root),
                 namespace: rustc_hir::def::Namespace::TypeNS,
                 form: Form::Replace { target },
             },
@@ -232,6 +234,8 @@ impl Catalog {
             let api = Api {
                 definition,
                 name: name.to_owned(),
+                source: format!("{}::{nested}{name}", family.module),
+                root: Some(root),
                 namespace,
                 form,
             };
@@ -293,6 +297,8 @@ mod tests {
         Api {
             definition,
             name: "take".to_owned(),
+            source: format!("{source}::take"),
+            root: Some(definition),
             namespace: Namespace::ValueNS,
             form: Form::Qualified {
                 qualifier: Qualifier {

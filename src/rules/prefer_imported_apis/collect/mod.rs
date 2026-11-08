@@ -169,46 +169,22 @@ impl Collector {
     ) -> RuleOutput {
         let facts: Vec<_> = self.facts.file(path, &workspace.modules).collect();
         let index = index::FactIndex::new(&facts);
-        let references: FxHashSet<_> = self.names.reference_ranges(cx, workspace, path).collect();
         let derives = self.derives.resolved(path, &workspace.modules);
         analysis::analyze(
             source.parsed.syntax(),
             &source.text,
             source.edition,
-            facts.iter().map(|fact| (fact.range, fact.id, &fact.value)),
-            &super::fix::Checks {
+            facts.iter().map(|fact| (fact.range, &fact.value)),
+            &analysis::Checks {
                 name: &|request| {
-                    let source_imports = request.replacement.as_ref().map_or(&[][..], |replacement| {
-                        index.source_imports(replacement.definition, request.name)
-                    });
-
                     let origins = index.origins(request.fact);
                     !origins.is_empty()
                         && origins
                             .iter()
-                            .all(|&id| self.names.safe(cx, workspace, path, id, &request, source_imports))
-                },
-                remove: &|request| {
-                    let origins = index.import_origins(request.origin);
-                    !origins.is_empty()
-                        && origins.iter().all(|&origin| {
-                            self.names.removable(
-                                cx,
-                                workspace,
-                                path,
-                                &super::names::RemovalRequest { origin, ..request },
-                            )
-                        })
+                            .all(|&id| self.names.safe(cx, workspace, path, id, &request))
                 },
                 protected: &|node| {
                     analysis::attributes::protected(node, &|range| derives.get(&range).copied().flatten())
-                },
-                reference: &|range| references.contains(&range),
-                depends: &|request| {
-                    index.import_origins(request.origin).iter().any(|&origin| {
-                        self.names
-                            .depends(cx, workspace, path, &super::names::RemovalRequest { origin, ..request })
-                    })
                 },
             },
         )

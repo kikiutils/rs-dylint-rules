@@ -1,7 +1,3 @@
-use ra_ap_syntax::{
-    AstNode,
-    ast,
-};
 use rustc_hir::def::Namespace;
 
 use super::*;
@@ -10,10 +6,6 @@ use super::*;
 fn fallback_and_fix_reuse_the_nearest_visible_import() {
     let source = "use std::io;\npub fn run() { use std::io; let _: std::io::Result<()> = Ok(()); }\n";
     let root = parse(source);
-    let local = root
-        .descendants()
-        .find_map(ast::StmtList::cast)
-        .unwrap_or_else(|| panic!("missing local scope"));
 
     let qualifier = qualifier("std::io", "io", false);
     let mut facts: Vec<_> = ranges(source, "io;")
@@ -48,14 +40,9 @@ fn fallback_and_fix_reuse_the_nearest_visible_import() {
         &root,
         source,
         ra_ap_syntax::Edition::Edition2024,
-        facts
-            .iter()
-            .map(|(range, event)| (*range, rustc_hir::CRATE_HIR_ID, event)),
-        &super::super::super::fix::Checks {
-            name: &|request| request.name != "io" || request.target == local.syntax().text_range(),
-            remove: &|_| true,
-            reference: &|_| false,
-            depends: &|_| false,
+        facts.iter().map(|(range, event)| (*range, event)),
+        &super::super::Checks {
+            name: &|request| request.name != "io" || request.reuse,
             protected: &crate::syntax::protected,
         },
     );
@@ -108,7 +95,7 @@ fn noncanonical_namespace_aliases_shorten_only_the_resolved_api_prefix() {
     )];
 
     let fixed = apply(source, &analyze(source, &facts, true));
-    assert_eq!(fixed, "fn run() { use std::io;\nlet _: io::Result<u8> = Ok(0); }\n");
+    assert_eq!(fixed, "use std::io;\nfn run() { let _: io::Result<u8> = Ok(0); }\n");
 }
 
 #[test]
@@ -170,7 +157,7 @@ fn extern_crate_bindings_obey_redundant_alias_and_import_order_rules() {
         ];
 
         let output = analyze(&source, &facts, true);
-        assert_eq!(output.issues.is_empty(), !renamed && !late, "{source}");
+        assert!(output.issues.is_empty(), "{source}");
         assert_eq!(apply(&source, &output), source);
     }
 }

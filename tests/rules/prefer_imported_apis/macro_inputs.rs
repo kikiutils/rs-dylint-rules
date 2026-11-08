@@ -15,10 +15,10 @@ pub fn root() -> Option<Path> {
     let (_, fixed) = support::rewritten(source, "pathkit=\"=3.1.0\"")?;
     assert_eq!(
         fixed,
-        source
-            .replace("cell::OnceCell, env::current_dir", "cell::OnceCell")
-            .replace("    let root =", "    use std::env;\nlet root =")
-            .replace("path!(current_dir()", "path!(env::current_dir()")
+        format!(
+            "use std::env;\n{}",
+            source.replace("path!(current_dir()", "path!(env::current_dir()")
+        )
     );
 
     Ok(())
@@ -34,9 +34,10 @@ fn qualifies_resolved_expression_arguments_in_standard_macros() -> Result<()> {
         let (_, fixed) = support::fixed(source, "")?;
         assert_eq!(
             fixed,
-            source
-                .replace("std::process::id", "process::id")
-                .replacen("{ ", "{ use std::process;\n", 1)
+            format!(
+                "use std::process;\n{}",
+                source.replace("std::process::id", "process::id")
+            )
         );
     }
 
@@ -52,9 +53,9 @@ pub fn values() -> (u32, u32, u32) { evaluate!(std::process::id()) }
     let (_, fixed) = support::fixed(source, "")?;
     assert_eq!(
         fixed,
-        source.replace(
-            "evaluate!(std::process::id())",
-            "use std::process;\nevaluate!(process::id())"
+        format!(
+            "use std::process;\n{}",
+            source.replace("evaluate!(std::process::id())", "evaluate!(process::id())")
         )
     );
 
@@ -83,9 +84,10 @@ pub fn text() -> String { format!("{}:{}", gen(), std::process::id()) }
     assert!(output.status.success(), "{output:?}");
     assert_eq!(
         crate::support::source(&directory)?,
-        source
-            .replace("std::process::id", "process::id")
-            .replace("{ format!", "{ use std::process;\nformat!")
+        format!(
+            "use std::process;\n{}",
+            source.replace("std::process::id", "process::id")
+        )
     );
 
     support::clean(&directory)
@@ -161,37 +163,40 @@ pub fn values() -> (u32, u32) { twice!(id()) }
 }
 
 #[test]
-fn macro_arguments_do_not_hoist_imports_out_of_conditional_statements() -> Result<()> {
-    let sources = [
-        r#"pub fn run() {
+fn macro_arguments_keep_full_paths_under_call_site_cfg_statements() -> Result<()> {
+    let source = r#"pub fn run() {
     #[cfg(feature = "timers")]
     let delays = vec![tokio::time::sleep(std::time::Duration::ZERO)];
 }
-"#,
-        r#"macro_rules! evaluate { ($value:expr) => { $value }; }
+"#;
+
+    let directory = support::fixture(source, &support::timers_feature())?;
+    support::clean(&directory)?;
+    support::check_without_timers(&directory)
+}
+
+#[test]
+fn cfg_tokens_inside_macro_arguments_use_the_call_site_target() -> Result<()> {
+    let source = r#"macro_rules! evaluate { ($value:expr) => { $value }; }
 pub fn run() {
     evaluate!({
         #[cfg(feature = "timers")]
         let delay = tokio::time::sleep(std::time::Duration::ZERO);
     });
 }
-"#,
-    ];
+"#;
 
-    for source in sources {
-        let directory = support::fixture(source, &support::timers_feature())?;
-        let output = crate::support::run(&directory, true, support::LINT)?;
-        assert!(output.status.success(), "{output:?}");
-        assert!(
-            crate::support::has_lint(&output, support::LINT),
-            "{source}\nfixed={}\n{output:?}",
-            crate::support::source(&directory)?
-        );
-
-        assert_eq!(crate::support::source(&directory)?, source, "{output:?}");
-
-        support::check_without_timers(&directory)?;
-    }
+    let (_, fixed) = support::fixed(source, &support::timers_feature())?;
+    assert_eq!(
+        fixed,
+        format!(
+            "use tokio::time::sleep;\n{}",
+            source.replace(
+                "tokio::time::sleep(std::time::Duration::ZERO)",
+                "sleep(std::time::Duration::ZERO)"
+            )
+        )
+    );
 
     Ok(())
 }

@@ -95,7 +95,7 @@ impl Collector {
                         continue;
                     };
 
-                    self.names.glob(cx, *definition);
+                    self.names.glob(cx, id, *definition);
                     let children = if let Some(local) = definition.as_local() {
                         cx.tcx.module_children_local(local)
                     } else {
@@ -110,8 +110,12 @@ impl Collector {
                             continue;
                         }
 
-                        self.names
-                            .binding(cx, id, child.ident.name.as_str(), child.res.map_id(|_| unreachable!()));
+                        self.names.glob_binding(
+                            cx,
+                            id,
+                            child.ident.name.as_str(),
+                            child.res.map_id(|_| unreachable!()),
+                        );
 
                         let Res::Def(_, definition) = child.res else { continue };
                         if tree.prefix.span.from_expansion() {

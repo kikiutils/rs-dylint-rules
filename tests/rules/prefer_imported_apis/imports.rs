@@ -3,7 +3,7 @@ use anyhow::Result;
 use super::support;
 
 #[test]
-fn standalone_imports_preserve_the_resolved_local_module_route() -> Result<()> {
+fn direct_imports_use_the_canonical_dependency_route() -> Result<()> {
     let source = r#"use anyhow::Result;
 mod errors { pub use anyhow::Context; }
 use errors::{Context};
@@ -16,9 +16,7 @@ pub fn run() -> Result<()> {
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
     assert_eq!(
         fixed,
-        source
-            .replace("    mod errors", "    use errors::bail;\nmod errors")
-            .replace("errors::bail!", "bail!")
+        format!("use anyhow::bail;\n{}", source.replace("errors::bail!", "bail!"))
     );
 
     Ok(())
@@ -37,20 +35,18 @@ pub async fn run() {
     let (_, fixed) = support::fixed(source, &support::tokio())?;
     assert_eq!(
         fixed,
-        source
-            .replace("tokio ::\n        time ::\n        r#sleep", "sleep")
-            .replace(
-                "    sleep(",
-                "    use tokio ::\n        time ::\n        r#sleep;\nsleep("
-            )
+        format!(
+            "use tokio::time::sleep;\n{}",
+            source.replace("tokio ::\n        time ::\n        r#sleep", "sleep")
+        )
     );
 
     Ok(())
 }
 
 #[test]
-fn diagnoses_redundant_extern_crate_aliases_used_by_managed_apis() -> Result<()> {
-    support::diagnosed(
+fn accepts_redundant_extern_crate_aliases_used_by_managed_apis() -> Result<()> {
+    support::accepted(
         r#"extern crate anyhow as anyhow;
 pub fn error() -> anyhow::Error { anyhow::Error::msg("example") }
 "#,
@@ -69,15 +65,10 @@ pub fn command() -> standard::process::Command { standard::process::Command::new
 }
 
 #[test]
-fn private_aliases_and_grouped_siblings_are_rewritten_together() -> Result<()> {
+fn private_alias_uses_are_rewritten_without_changing_grouped_imports() -> Result<()> {
     let source = "use serde_json::{Value as JsonValue,\n    // Numeric helper stays imported.\n    Number};\npub fn value(_: JsonValue, _: Number) {}\n";
     let (_, fixed) = support::fixed(source, "serde_json=\"=1.0.154\"")?;
-    assert_eq!(
-        fixed,
-        source
-            .replace("Value as JsonValue,", "")
-            .replace("_: JsonValue", "_: serde_json::Value")
-    );
+    assert_eq!(fixed, source.replace("_: JsonValue", "_: serde_json::Value"));
 
     Ok(())
 }
@@ -159,7 +150,7 @@ fn private_aliases_used_through_other_module_paths_are_not_removed_prematurely()
 }
 
 #[test]
-fn new_direct_import_routes_keep_the_namespace_alias_they_depend_on() -> Result<()> {
+fn canonical_direct_imports_preserve_existing_namespace_aliases() -> Result<()> {
     let source = r#"use anyhow as a;
 pub fn fail() -> a::Result<()> { a::bail!("example") }
 "#;
@@ -168,10 +159,10 @@ pub fn fail() -> a::Result<()> { a::bail!("example") }
     assert_eq!(
         fixed,
         format!(
-            "use a::Result;\n{}",
+            "use anyhow::Result;\nuse anyhow::bail;\n{}",
             source
                 .replace("-> a::Result", "-> Result")
-                .replace("{ a::bail!", "{ use a::bail;\nbail!")
+                .replace("{ a::bail!", "{ bail!")
         )
     );
 
@@ -179,7 +170,7 @@ pub fn fail() -> a::Result<()> { a::bail!("example") }
 }
 
 #[test]
-fn new_direct_import_routes_keep_explicit_ancestor_aliases() -> Result<()> {
+fn canonical_direct_imports_preserve_explicit_ancestor_aliases() -> Result<()> {
     for path in ["super::a", "crate::a"] {
         let source = format!(
             "use anyhow as a;\npub fn root() -> a::Error {{ a::Error::msg(\"example\") }}\nmod child {{\n    pub fn fail() -> anyhow::Result<()> {{ {path}::bail!(\"example\") }}\n}}\n"
@@ -190,9 +181,9 @@ fn new_direct_import_routes_keep_explicit_ancestor_aliases() -> Result<()> {
             fixed,
             source
                 .replace("a::Error", "anyhow::Error")
-                .replace("    pub fn fail", "    use anyhow::Result;\npub fn fail")
+                .replace("mod child {", "mod child {use anyhow::Result;\nuse anyhow::bail;\n")
                 .replace("-> anyhow::Result", "-> Result")
-                .replace(&format!("{{ {path}::bail!"), &format!("{{ use {path}::bail;\nbail!"))
+                .replace(&format!("{path}::bail!"), "bail!")
         );
     }
 

@@ -9,12 +9,7 @@ pub fn parse() -> serde_json::Result<u8> { parse_json::<u8>("7") }
 "#;
 
     let (_, fixed) = support::rewritten(source, "serde_json=\"=1.0.154\"")?;
-    assert_eq!(
-        fixed,
-        source
-            .replace("use serde_json::from_str as parse_json;\n", "")
-            .replace("parse_json::<u8>", "serde_json::from_str::<u8>")
-    );
+    assert_eq!(fixed, source.replace("parse_json::<u8>", "serde_json::from_str::<u8>"));
 
     Ok(())
 }
@@ -37,12 +32,7 @@ pub fn map(_: Option<json::Error>) -> json::Map<String, json::Value> { json::Map
         "serde_json=\"=1.0.154\"\nserde={version=\"=1.0.229\",features=[\"derive\"]}",
     )?;
 
-    assert_eq!(
-        fixed,
-        source
-            .replace("use serde_json as json;\n", "")
-            .replace("json::", "serde_json::")
-    );
+    assert_eq!(fixed, source.replace("json::", "serde_json::"));
 
     Ok(())
 }
@@ -58,12 +48,7 @@ pub fn parse() -> format::Value {
 "#;
 
     let (_, fixed) = support::fixed(source, "toml=\"=1.2.1\"")?;
-    assert_eq!(
-        fixed,
-        source
-            .replace("use toml as format;\n", "")
-            .replace("format::", "toml::")
-    );
+    assert_eq!(fixed, source.replace("format::", "toml::"));
 
     Ok(())
 }
@@ -96,10 +81,6 @@ fn behavior() { assert_eq!(roundtrip(), (7, 8, 9)); }
     assert_eq!(
         fixed,
         source
-            .replace(
-                "use rmp_serde as msgpack;\nuse postcard as binary;\nuse ciborium as cbor;\n",
-                ""
-            )
             .replace("msgpack::", "rmp_serde::")
             .replace("binary::", "postcard::")
             .replace("cbor::ser::", "ciborium::")
@@ -124,12 +105,7 @@ pub fn hexadecimal() -> String {
 "#;
 
     let (_, fixed) = support::fixed(source, "hex=\"=0.4.3\"")?;
-    assert_eq!(
-        fixed,
-        source
-            .replace("use hex as encoding;\n", "")
-            .replace("encoding::", "hex::")
-    );
+    assert_eq!(fixed, source.replace("encoding::", "hex::"));
 
     Ok(())
 }

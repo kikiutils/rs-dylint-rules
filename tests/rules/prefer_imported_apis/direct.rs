@@ -14,10 +14,12 @@ pub fn check(valid: bool) -> Result<String> {
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
     assert_eq!(
         fixed,
-        source
-            .replace("anyhow::ensure!", "ensure!")
-            .replace("anyhow::Context::", "Context::")
-            .replace("    ensure!", "    use anyhow::ensure;\nuse anyhow::Context;\nensure!")
+        format!(
+            "use anyhow::ensure;\nuse anyhow::Context;\n{}",
+            source
+                .replace("anyhow::ensure!", "ensure!")
+                .replace("anyhow::Context::", "Context::")
+        )
     );
 
     Ok(())
@@ -33,10 +35,10 @@ pub fn result() -> anyhow::Result<()> { Ok(()) }
     assert_eq!(
         fixed,
         format!(
-            "use anyhow::Result;\n{}",
+            "use anyhow::anyhow;\nuse anyhow::Result;\n{}",
             source
                 .replace("anyhow::Result<", "Result<")
-                .replace("{ anyhow::anyhow!", "{ use anyhow::anyhow;\nanyhow!")
+                .replace("anyhow::anyhow!", "anyhow!")
         )
     );
 
@@ -55,17 +57,19 @@ pub fn check(valid: bool) -> Result<()> {
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
     assert_eq!(
         fixed,
-        source
-            .replace("anyhow::ensure!", "ensure!")
-            .replace("anyhow::bail!", "bail!")
-            .replace("    ensure!", "    use anyhow::ensure;\nuse anyhow::bail;\nensure!")
+        format!(
+            "use anyhow::ensure;\nuse anyhow::bail;\n{}",
+            source
+                .replace("anyhow::ensure!", "ensure!")
+                .replace("anyhow::bail!", "bail!")
+        )
     );
 
     Ok(())
 }
 
 #[test]
-fn keeps_new_imports_local_when_an_existing_group_is_between_calls() -> Result<()> {
+fn batches_module_imports_despite_existing_groups_between_calls() -> Result<()> {
     let source = r#"use anyhow::Result;
 pub fn before() -> Result<()> { anyhow::bail!("before") }
 use anyhow::{ensure};
@@ -75,10 +79,7 @@ pub fn after() -> Result<()> { ensure!(true); anyhow::bail!("after") }
     let (_, fixed) = support::fixed(source, &support::anyhow())?;
     assert_eq!(
         fixed,
-        source
-            .replace("anyhow::bail!(\"before\")", "use anyhow::bail;\nbail!(\"before\")")
-            .replace("ensure!(true);", "use anyhow::bail;\nensure!(true);")
-            .replace("anyhow::bail!(\"after\")", "bail!(\"after\")")
+        format!("use anyhow::bail;\n{}", source.replace("anyhow::bail!", "bail!"))
     );
 
     Ok(())
@@ -97,8 +98,8 @@ pub fn read() -> Result<String> {
 }
 
 #[test]
-fn diagnoses_context_alias_used_only_through_extension_methods() -> Result<()> {
-    support::diagnosed(
+fn accepts_context_alias_used_only_through_extension_methods() -> Result<()> {
+    support::accepted(
         r#"use anyhow::{Context as ErrorContext, Result};
 pub fn read() -> Result<String> {
     std::fs::read_to_string("missing").context("read config")

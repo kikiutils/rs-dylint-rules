@@ -3,7 +3,7 @@ use rustc_hir::def::Namespace;
 use super::*;
 
 #[test]
-fn glob_imports_with_multiple_managed_members_are_reported_once() {
+fn glob_imports_without_accesses_are_not_reported() {
     let source = "use std::process::*;\n";
     let import_range = range(source, "std::process");
     let facts: Vec<_> = ["id", "exit"]
@@ -28,13 +28,12 @@ fn glob_imports_with_multiple_managed_members_are_reported_once() {
         .collect();
 
     let output = analyze(source, &facts, true);
-    assert_eq!(output.issues.len(), 1);
-    assert_eq!(output.issues[0].diagnostics[0].range, import_range);
+    assert_eq!(output.issues, []);
     assert_eq!(apply(source, &output), source);
 }
 
 #[test]
-fn repeated_canonical_accesses_report_a_redundant_namespace_import_once() {
+fn canonical_accesses_do_not_rewrite_redundant_namespace_imports() {
     let source = "use std::process as process;\nfn run() { process::id(); process::id(); }\n";
     let qualifier = qualifier("std::process", "process", false);
     let alias_range = range(source, "process;");
@@ -67,11 +66,6 @@ fn repeated_canonical_accesses_report_a_redundant_namespace_import_once() {
     }));
 
     let output = analyze(source, &facts, true);
-    assert_eq!(output.issues.len(), 1);
-    assert_eq!(
-        output.issues[0].diagnostics[0].range,
-        range(source, "std::process as process")
-    );
-
-    assert_eq!(apply(source, &output), source.replace(" as process", ""));
+    assert_eq!(output.issues, []);
+    assert_eq!(apply(source, &output), source);
 }

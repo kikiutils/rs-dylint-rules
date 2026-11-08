@@ -23,8 +23,8 @@
 | `src/rules/*/collect.rs`／`collect/` | 收集 rustc 語意並銜接各規則的分析。`statement_padding` 不需 facts，沒有 collector，其分析入口在 `mod.rs`。 |
 | `src/rules/*/analysis.rs`／`analysis/` | 依 CST、原文與 compiler facts 產生診斷與修正要求。 |
 | `src/rules/prefer_imported_apis/policy/` | 分檔宣告 API 家族，由公開 exports 建立 DefId 索引，集中直接名稱、指定 namespace 與固定 module alias 政策。 |
-| `src/rules/prefer_imported_apis/names/` | 收齊 rustc bindings 後解析原始路徑各段的 lexical／qualified references（包含 import 與已解析的 bang／attribute／derive 巨集前綴），依名稱空間、作用域與 glob 使用端判斷新增／重用及移除名稱是否安全。 |
-| `src/rules/prefer_imported_apis/fix/` | 依作用域與 binding 規劃 imports 與使用點的 multipart edits；合併相依組與修改同一條 use 宣告的組，驗證成功後再合併共用插入位置的 edits，其餘獨立提供 suggestion。 |
+| `src/rules/prefer_imported_apis/names/` | 收齊 rustc bindings 後解析原始路徑各段的 lexical／qualified references（包含 import 與已解析的 bang／attribute／derive 巨集前綴），依名稱空間、作用域與 glob 使用端判斷新增／重用名稱是否安全。 |
+| `src/rules/prefer_imported_apis/fix.rs` | 將 analysis 的共用決策轉為使用點替換及新增 imports；依 target／binding 去重，同檔所有 edits 合成一筆 multipart suggestion。 |
 | `src/test_support.rs` | analysis 單元測試套用 edits 的 helper。 |
 | `tests/rules/main.rs` | 規則專屬整合測試入口；`prefer_imported_apis/` 依家族與安全邊界分組，其他規則案例位於同目錄。跨規則與來源情境測試保留於 `tests/`。 |
 | `tests/support/mod.rs` | 整合測試共用 fixture、Cargo 執行及 JSON 診斷判讀；放在子目錄避免被 Cargo 當成獨立測試 target。 |
@@ -81,16 +81,15 @@
 - import 與 derive 規則使用 `syntax::protected` 共用已知 builtin／tool attribute 安全清單（另含不讀取 derive 的 serde_with `skip_serializing_none`，以及原樣保留函式本體的 `tokio::test`／`tokio::main`）；`cfg_attr` 遞迴檢查所有分支，未知 attributes 保留屏障。derive helpers 另要求相同 item 有對應的已解析 derive。僅補空行的 `statement_padding` 不使用這項 attribute 判定。
 - `prefer_imported_apis` 的路徑替換另以 compiler-resolved derive facts 放行已知 derive／helper，包含 `cfg_attr` 包住的 derive 與其 helpers；這不放寬 derive 排序或未知 attribute macro。derive/helper metadata 由共用登記表提供，排序名單與路徑修改的放行範圍仍分開決定。imports 排序則僅放行原樣附著的 cfg／不含 expect 的 lint attributes，依修改操作分別判斷安全性。
 - API 家族對共享 re-exports 依 DefId 與來源 crate 篩選；std／core 替代路徑有明確優先級，不以宣告迭代順序決定衝突政策。
-- 標準 Result → anyhow Result 這類來源替換區分原 API 與目標 binding 的身分，並驗證舊 binding 移除及 references 涵蓋範圍；不能把相同文字名稱當成相同型別定義。尚未載入 metadata 的直接依賴可依確切 `--extern` 名稱新增 import，但不以未知 DefId 當作既有 binding 的相等依據。
+- 標準 Result → anyhow Result 這類來源替換區分原 API 與目標 binding 的身分，不覆蓋或移除舊 binding；短名衝突時先使用完整路徑，不能把相同文字名稱當成相同型別定義。尚未載入 metadata 的直接依賴可依確切 `--extern` 名稱新增 import，但不以未知 DefId 當作既有 binding 的相等依據。
 - 搬移或拆分 imports 仍須保留各規則的註解、cfg、名稱解析與 `expect` 保護。安全 attribute 不代表可以任意搬移帶 attributes 的 item。
 
 ## 自動修正
 
 - 可安全套用的 edits 以 `MachineApplicable` multipart suggestions 提供，由 `cargo dylint --fix` 交給 Cargo fix 套用；規則不直接寫檔。
-- `prefer_imported_apis` 以作用域與 binding 為修復單位，各組先確認舊 import 與相依使用點能一起處理，再掛在該組第一個 issue；相依的組合併成同一筆 suggestion，單組失敗不會關閉同檔其他獨立修復。驗證成功後，共用同一 import 插入位置的 edits 亦合併輸出，避免 Cargo fix 將相同位置的多筆插入視為衝突；失敗的組不會加入。
-- 修復規劃快取各 batch 的候選、驗證結果及成對相依性；合併後只重算合併出的 batch 與相關配對。既有 import 查找與完整路徑根名稱檢查共用 analysis 層的判斷；既有 binding 一律優先選最近的可見作用域。
+- `prefer_imported_apis` 只改使用點並新增 imports，既有 `use` 不修改；決策、插入位置與名稱安全條件見[規則文件](rules/prefer-imported-apis.md#auto-fix)。
 - 無法確認安全的修正不提供 suggestion。未產生診斷或未提供修正，可能是支援範圍、安全條件或執行失敗所致，不代表程式碼符合規則或屬於政策例外。
-- 排版交給使用者的 rustfmt；規則不呼叫 rustfmt 或 Clippy。`prefer_imported_apis` 新增 import 時只附上 LF 換行，刪除時只移除宣告本身，不修補周邊換行、縮排或空白；插入位置仍保留註解與文件歸屬。其他規則的原文保留方式見各規則文件。建議流程為 Dylint → 既有 fmt/lint。
+- 排版交給使用者的 rustfmt；規則不呼叫 rustfmt 或 Clippy。`prefer_imported_apis` 新增 import 時只附上 LF 換行；舊 imports 的 unused 清理由 rustc 處理，合併與排序交給其他規則及 rustfmt。其他規則的原文保留方式見各規則文件。建議流程為 Dylint → 既有 fmt/lint。
 
 ## 執行限制
 

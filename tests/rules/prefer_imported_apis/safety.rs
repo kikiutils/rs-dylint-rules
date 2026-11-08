@@ -21,8 +21,8 @@ pub fn channels(_: std::sync::mpsc::Sender<u8>) {}
             .replace("std::io::Result", "io::Result")
             .replace("std::sync::mpsc::Sender", "std_mpsc::Sender")
             .replace(
-                "// Keep this comment",
-                "use std::io;\nuse std::sync::mpsc as std_mpsc;\n// Keep this comment"
+                "#![allow(dead_code)]",
+                "#![allow(dead_code)]use std::io;\nuse std::sync::mpsc as std_mpsc;\n"
             )
     );
 
@@ -53,7 +53,7 @@ pub fn error() -> anyhow::Error { anyhow::anyhow!("conditional") }
     let (_, fixed) = support::fixed(source, &dependencies)?;
     assert_eq!(
         fixed,
-        source.replace("{ anyhow::anyhow!", "{ use anyhow::anyhow;\nanyhow!")
+        source.replace("{ anyhow::anyhow!", "{use anyhow::anyhow;\n anyhow!")
     );
 
     Ok(())
@@ -74,7 +74,7 @@ pub async fn error() -> anyhow::Error { anyhow::anyhow!("example") }
     let (_, fixed) = support::fixed(source, &dependencies)?;
     assert_eq!(
         fixed,
-        source.replace("{ anyhow::anyhow!", "{ use anyhow::anyhow;\nanyhow!")
+        format!("use anyhow::anyhow;\n{}", source.replace("anyhow::anyhow!", "anyhow!"))
     );
 
     Ok(())
@@ -132,9 +132,7 @@ pub struct QueryError(AnyhowError);
     assert_eq!(
         fixed,
         source
-            .replace("use std::result::Result;", "use anyhow::Result;\n")
-            .replace("use serde_json::Value;\n", "")
-            .replace("use anyhow::Error as AnyhowError;\n", "")
+            .replace("pub value: Result", "pub value: anyhow::Result")
             .replace("Option<Value>", "Option<serde_json::Value>")
             .replace("QueryError(AnyhowError)", "QueryError(anyhow::Error)")
     );

@@ -14,12 +14,7 @@ pub fn streams() {
 ";
 
     let (_, fixed) = support::fixed(source, DEPENDENCY)?;
-    assert_eq!(
-        fixed,
-        source
-            .replace("use anstream as output;\n", "")
-            .replace("output::", "anstream::")
-    );
+    assert_eq!(fixed, source.replace("output::", "anstream::"));
 
     Ok(())
 }

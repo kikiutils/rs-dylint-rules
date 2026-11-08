@@ -16,9 +16,9 @@ pub async fn timers() {
     let (_, fixed) = support::fixed(source, &support::tokio())?;
     assert_eq!(
         fixed,
-        source.replace("tokio::time::", "").replace(
-            "    let delay =",
-            "    use tokio::time::sleep;\nuse tokio::time::timeout;\nuse tokio::time::interval;\nlet delay =",
+        format!(
+            "use tokio::time::sleep;\nuse tokio::time::timeout;\nuse tokio::time::interval;\n{}",
+            source.replace("tokio::time::", "")
         )
     );
 
@@ -38,10 +38,12 @@ fn qualifies_task_functions_through_the_fixed_module_alias() -> Result<()> {
     let (_, fixed) = support::fixed(source, &support::tokio())?;
     assert_eq!(
         fixed,
-        source
-            .replace("tokio::spawn", "tokio_task::spawn")
-            .replace("tokio::task::", "tokio_task::")
-            .replace("    let handle =", "    use tokio::task as tokio_task;\nlet handle =")
+        format!(
+            "use tokio::task as tokio_task;\n{}",
+            source
+                .replace("tokio::spawn", "tokio_task::spawn")
+                .replace("tokio::task::", "tokio_task::")
+        )
     );
 
     Ok(())
@@ -98,7 +100,7 @@ pub async fn task() -> tokio::task::JoinHandle<()> { tokio_task::spawn(async {})
 }
 
 #[test]
-fn qualifies_bare_channel_bindings_and_removes_the_original_import() -> Result<()> {
+fn qualifies_bare_channel_bindings_and_preserves_the_original_import() -> Result<()> {
     let source = r"use tokio::sync::mpsc::{channel, Sender};
 pub fn create() -> Sender<u8> { channel(1).0 }
 ";
@@ -109,7 +111,6 @@ pub fn create() -> Sender<u8> { channel(1).0 }
         format!(
             "use tokio::sync::mpsc as tokio_mpsc;\n{}",
             source
-                .replace("use tokio::sync::mpsc::{channel, Sender};", "")
                 .replace("-> Sender", "-> tokio_mpsc::Sender")
                 .replace("{ channel(", "{ tokio_mpsc::channel(")
         )
