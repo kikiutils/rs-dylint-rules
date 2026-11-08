@@ -123,7 +123,7 @@ fn public_reexports_and_import_owned_trailing_comments_are_preserved() -> Result
 }
 
 #[test]
-fn private_aliases_used_through_other_module_paths_are_not_removed_prematurely() -> Result<()> {
+fn existing_imports_used_through_other_module_paths_are_preserved() -> Result<()> {
     let parent = "use serde_json::Value as JsonValue;\npub fn active(_: JsonValue) {}\nmod child;\n";
     for child in [
         "pub(super) use super::JsonValue;\npub fn value(_: JsonValue) {}\n",
@@ -248,4 +248,44 @@ fn cross_file_macro_routes_keep_parent_aliases() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[test]
+fn unconditional_function_imports_are_inserted_at_the_module_start() -> Result<()> {
+    let source = "pub fn current() -> u32 { std::process::id() }\n";
+    let (_, fixed) = support::fixed(source, "")?;
+    assert_eq!(fixed, "use std::process;\npub fn current() -> u32 { process::id() }\n");
+    Ok(())
+}
+
+#[test]
+fn multiple_import_insertions_form_one_file_suggestion() -> Result<()> {
+    let source = "pub fn current() { let _ = std::process::id(); let _ = std::env::current_dir(); }\n";
+    let directory = support::fixture(source, "")?;
+    let output = crate::support::run(&directory, false, support::LINT)?;
+    assert!(output.status.success(), "{output:?}");
+    let suggestions = crate::support::diagnostics(&output, support::LINT)
+        .into_iter()
+        .flat_map(|diagnostic| {
+            diagnostic["message"]["children"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default()
+        })
+        .filter(|child| {
+            child["spans"]
+                .as_array()
+                .is_some_and(|spans| spans.iter().any(|span| span["suggested_replacement"].is_string()))
+        })
+        .count();
+
+    assert_eq!(suggestions, 1, "{output:?}");
+    let (_, fixed) = support::fixed(source, "")?;
+    assert!(fixed.starts_with("use std::process;\nuse std::env;\n"), "{fixed}");
+    Ok(())
+}
+
+#[test]
+fn unused_noncanonical_imports_are_not_diagnosed_or_rewritten() -> Result<()> {
+    support::accepted("use std::io::Error as IoError;\n", "")
 }

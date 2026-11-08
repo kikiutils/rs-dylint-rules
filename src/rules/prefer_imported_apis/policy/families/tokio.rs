@@ -4,6 +4,7 @@ use super::{
 };
 
 pub(super) const FAMILIES: &[Family] = &[
+    Family::qualified("tokio::io", "tokio", "tokio", Members::Owned { constants: false }),
     Family::direct("tokio::time", Members::Functions(&[])),
     Family::qualified("tokio::task", "tokio", "tokio", Members::Functions(&[])),
     Family::qualified(

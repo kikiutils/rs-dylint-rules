@@ -3,18 +3,6 @@ use anyhow::Result;
 use super::support;
 
 #[test]
-fn cfg_function_imports_stay_inside_the_function_body() -> Result<()> {
-    let source = "#[cfg(all())]\npub fn current() -> u32 { std::process::id() }\n";
-    let (_, fixed) = support::fixed(source, "")?;
-    assert_eq!(
-        fixed,
-        source.replace("{ std::process::id", "{use std::process;\n process::id")
-    );
-
-    Ok(())
-}
-
-#[test]
 fn cfg_statements_without_blocks_fall_back_to_compliant_full_paths() -> Result<()> {
     let source = r#"use std::process::id;
 pub fn current() -> u32 {
@@ -63,4 +51,33 @@ pub fn run() {
     let directory = support::fixture(source, &support::timers_feature())?;
     support::clean(&directory)?;
     support::check_without_timers(&directory)
+}
+
+#[test]
+fn keeps_new_imports_inside_conditional_function_boundaries() -> Result<()> {
+    let source = r#"#[cfg(feature = "enabled")]
+pub fn error() -> anyhow::Error { anyhow::anyhow!("conditional") }
+"#;
+
+    let dependencies = format!("{}\n[features]\ndefault=[\"enabled\"]\nenabled=[]", support::anyhow());
+    let (_, fixed) = support::fixed(source, &dependencies)?;
+    assert_eq!(
+        fixed,
+        source.replace("{ anyhow::anyhow!", "{use anyhow::anyhow;\n anyhow!")
+    );
+
+    Ok(())
+}
+
+#[test]
+fn ignores_cfg_disabled_items_and_unloaded_external_modules() -> Result<()> {
+    support::accepted(
+        r"#[cfg(any())]
+mod missing;
+#[cfg(any())]
+pub async fn unused() { tokio::time::sleep(std::time::Duration::ZERO).await; }
+pub fn active() {}
+",
+        "",
+    )
 }

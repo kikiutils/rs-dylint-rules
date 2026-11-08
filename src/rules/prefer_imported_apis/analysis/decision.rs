@@ -13,7 +13,7 @@ use super::{
     },
     Access,
     Checks,
-    bindings::{
+    declarations::{
         self,
         Binding,
     },
@@ -59,13 +59,13 @@ fn root_available(
     access: &Access,
     binding: &Binding,
     target: &SyntaxNode,
-    imports: &[bindings::ExistingImport],
+    imports: &[declarations::ExistingImport],
     checks: &Checks<'_>,
 ) -> bool {
     let root = binding.source.split("::").next().unwrap_or("");
     !root.is_empty()
         && module(access)
-            .is_some_and(|module| bindings::root_unshadowed(&access.node, &module, root, binding.root, imports))
+            .is_some_and(|module| declarations::root_unshadowed(&access.node, &module, root, binding.root, imports))
         && (checks.name)(NameRequest {
             fact: access.fact,
             at: access.range,
@@ -82,7 +82,7 @@ fn root_available(
 
 pub(super) fn covered(
     accesses: &[Access],
-    imports: &[bindings::ExistingImport],
+    imports: &[declarations::ExistingImport],
     checks: &Checks<'_>,
 ) -> Vec<TextRange> {
     accesses
@@ -102,7 +102,7 @@ pub(super) fn decide(
     access: &Access,
     source: &str,
     covered: &[TextRange],
-    imports: &[bindings::ExistingImport],
+    imports: &[declarations::ExistingImport],
     checks: &Checks<'_>,
 ) -> Decision {
     if !eligible(access, checks) {
@@ -152,7 +152,7 @@ pub(super) fn decide(
         covered,
     };
 
-    if bindings::reusable(&access.node, &module, &binding, imports) && (checks.name)(request(true)) {
+    if declarations::reusable(&access.node, &module, &binding, imports) && (checks.name)(request(true)) {
         return Decision::Canonical {
             replacement: access.api.canonical(),
             import: None,
@@ -161,7 +161,7 @@ pub(super) fn decide(
 
     if binding.external
         || !root_available(access, &binding, &target, imports, checks)
-        || !bindings::vacant(&target, &binding.name, binding.namespace)
+        || !declarations::vacant(&target, &binding.name, binding.namespace)
         || !(checks.name)(request(false))
     {
         return fallback();

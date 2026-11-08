@@ -9,7 +9,6 @@ mod platform;
 mod prelude;
 mod resolution;
 mod result;
-mod rewrite;
 mod runtime;
 mod rusqlite;
 mod safety;

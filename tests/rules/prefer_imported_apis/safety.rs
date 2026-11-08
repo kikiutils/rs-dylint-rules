@@ -40,22 +40,6 @@ pub fn error() -> anyhow::Error { anyhow::anyhow!("example") }
 }
 
 #[test]
-fn keeps_new_imports_inside_conditional_function_boundaries() -> Result<()> {
-    let source = r#"#[cfg(feature = "enabled")]
-pub fn error() -> anyhow::Error { anyhow::anyhow!("conditional") }
-"#;
-
-    let dependencies = format!("{}\n[features]\ndefault=[\"enabled\"]\nenabled=[]", support::anyhow());
-    let (_, fixed) = support::fixed(source, &dependencies)?;
-    assert_eq!(
-        fixed,
-        source.replace("{ anyhow::anyhow!", "{use anyhow::anyhow;\n anyhow!")
-    );
-
-    Ok(())
-}
-
-#[test]
 fn fixes_original_function_bodies_wrapped_by_tokio_main() -> Result<()> {
     let dependencies = format!(
         "{}\ntokio={{version=\"{}\",features=[\"rt\",\"macros\"]}}",
@@ -88,19 +72,6 @@ fn preserves_bom_and_crlf_when_reusing_existing_namespace_imports() -> Result<()
     let (_, fixed) = support::fixed(source, "")?;
     assert_eq!(fixed, source.replace("{ std::process::id()", "{ process::id()"));
     Ok(())
-}
-
-#[test]
-fn ignores_cfg_disabled_items_and_unloaded_external_modules() -> Result<()> {
-    support::accepted(
-        r"#[cfg(any())]
-mod missing;
-#[cfg(any())]
-pub async fn unused() { tokio::time::sleep(std::time::Duration::ZERO).await; }
-pub fn active() {}
-",
-        "",
-    )
 }
 
 #[test]

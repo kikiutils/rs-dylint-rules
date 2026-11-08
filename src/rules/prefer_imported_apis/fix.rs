@@ -12,7 +12,7 @@ use crate::diagnostic::{
     RuleOutput,
 };
 
-pub(super) fn plan(accesses: &[Access], decisions: &[Decision], output: &mut RuleOutput) {
+pub(super) fn emit(accesses: &[Access], decisions: &[Decision], output: &mut RuleOutput) {
     let mut edits = Vec::new();
     let mut imports = BTreeMap::<_, Vec<String>>::new();
     for (access, decision) in accesses.iter().zip(decisions) {

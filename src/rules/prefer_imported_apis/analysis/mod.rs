@@ -7,8 +7,8 @@ use ra_ap_syntax::{
 
 mod accesses;
 pub(super) mod attributes;
-mod bindings;
 mod decision;
+mod declarations;
 mod paths;
 mod targets;
 
@@ -39,7 +39,7 @@ pub(super) fn analyze<'a>(
     let mut accesses = Vec::new();
     let mut imports = Vec::new();
     for (range, event) in facts {
-        if let Some(import) = bindings::ExistingImport::read(root, range, event) {
+        if let Some(import) = declarations::ExistingImport::read(root, range, event) {
             imports.push(import);
         }
 
@@ -59,7 +59,7 @@ pub(super) fn analyze<'a>(
         .collect();
 
     let mut output = RuleOutput::default();
-    fix::plan(&accesses, &decisions, &mut output);
+    fix::emit(&accesses, &decisions, &mut output);
     output
 }
 

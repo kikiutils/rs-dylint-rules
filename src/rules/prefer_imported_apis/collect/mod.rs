@@ -1,6 +1,9 @@
 use std::cell::OnceCell;
 
-use kikiutils::types::fx_collections::FxHashSet;
+use kikiutils::types::fx_collections::{
+    FxHashMap,
+    FxHashSet,
+};
 use pathkit::Path;
 use ra_ap_syntax::AstNode;
 use rustc_hir::{
@@ -20,11 +23,13 @@ use rustc_span::{
 mod accesses;
 mod derives;
 mod imports;
-mod index;
 
 use super::{
     analysis,
-    model::Event,
+    model::{
+        Event,
+        FactKey,
+    },
     names::Names,
     policy::{
         Api,
@@ -168,7 +173,19 @@ impl Collector {
         workspace: &Workspace,
     ) -> RuleOutput {
         let facts: Vec<_> = self.facts.file(path, &workspace.modules).collect();
-        let index = index::FactIndex::new(&facts);
+        let mut origins = FxHashMap::<_, Vec<_>>::default();
+        for fact in &facts {
+            let key = FactKey {
+                range: fact.range,
+                definition: fact.value.definition(),
+            };
+
+            let ids = origins.entry(key).or_default();
+            if !ids.contains(&fact.id) {
+                ids.push(fact.id);
+            }
+        }
+
         let derives = self.derives.resolved(path, &workspace.modules);
         analysis::analyze(
             source.parsed.syntax(),
@@ -177,11 +194,9 @@ impl Collector {
             facts.iter().map(|fact| (fact.range, &fact.value)),
             &analysis::Checks {
                 name: &|request| {
-                    let origins = index.origins(request.fact);
-                    !origins.is_empty()
-                        && origins
-                            .iter()
-                            .all(|&id| self.names.safe(cx, workspace, path, id, &request))
+                    origins
+                        .get(&request.fact)
+                        .is_some_and(|ids| ids.iter().all(|&id| self.names.safe(cx, workspace, path, id, &request)))
                 },
                 protected: &|node| {
                     analysis::attributes::protected(node, &|range| derives.get(&range).copied().flatten())
