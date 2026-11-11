@@ -162,7 +162,7 @@ full = ["all"]
 
 [dependencies]
 anyhow = "1.0.104"
-dylint_linting = "6.3.2"
+dylint_linting = "6.4.0"
 kikiutils = { version = "0.13.2", features = ["fx-collections"] }
 pathkit = "3.1.0"
 ra_ap_syntax = "0.0.362"
