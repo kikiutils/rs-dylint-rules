@@ -161,11 +161,11 @@ full = ["all"]
 # =============================================================================
 
 [dependencies]
-anyhow = "1.0.104"
+anyhow = "1.0.105"
 dylint_linting = "6.4.0"
 kikiutils = { version = "0.13.2", features = ["fx-collections"] }
 pathkit = "3.1.0"
-ra_ap_syntax = "0.0.362"
+ra_ap_syntax = "0.0.364"
 strum = { version = "0.28.0", features = ["derive"] }
 unicode-ident = "1.0.27"
 unicode-properties = { version = "0.1.5", default-features = false, features = ["emoji"] }
