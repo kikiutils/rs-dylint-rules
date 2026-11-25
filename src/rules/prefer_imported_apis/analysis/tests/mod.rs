@@ -87,7 +87,7 @@ fn analyze(source: &str, facts: &[(TextRange, Event)], free: bool) -> RuleOutput
         ra_ap_syntax::Edition::Edition2024,
         facts.iter().map(|(range, event)| (*range, event)),
         &super::Checks {
-            name: &|request| free && (!request.reuse || request.external),
+            name: &|request| free && (!request.reuses() || request.external),
             protected: &crate::syntax::protected,
         },
     )

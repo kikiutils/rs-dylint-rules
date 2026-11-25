@@ -11,6 +11,7 @@ use super::{
     Name,
     NameRequest,
     Names,
+    Placement,
     Reference,
     ancestry,
     module,
@@ -124,7 +125,7 @@ impl Names {
                 .position(|scope| *scope == binding.scope)
                 .unwrap_or(usize::MAX);
 
-            if distance > target_distance && !request.reuse && !request.external && !textual(binding) {
+            if distance > target_distance && !request.reuses() && !request.external && !textual(binding) {
                 continue;
             }
 
@@ -132,7 +133,7 @@ impl Names {
                 continue;
             }
 
-            if (request.reuse || request.external)
+            if (request.reuses() || request.external)
                 && !textual(binding)
                 && explicit_distance.is_some_and(|explicit| explicit < distance)
             {
@@ -141,7 +142,7 @@ impl Names {
 
             // A glob binding is not a duplicate declaration. References below
             // decide whether overriding it would change existing code.
-            if binding.glob && !request.reuse && !request.external {
+            if binding.glob && !request.reuses() && !request.external {
                 continue;
             }
 
@@ -154,20 +155,23 @@ impl Names {
             return self.external_available(cx, id, target, request);
         }
 
-        if request.reuse {
-            return self
-                .bindings
-                .iter()
-                .any(|binding| matching(binding) && visible(binding) && same(binding))
-                || self.references(cx).iter().any(|reference| {
-                    reference.lexical
-                        && matching(&reference.name)
-                        && same(&reference.name)
-                        && workspace
-                            .locate_known(cx, reference.span)
-                            .is_some_and(|(file, range)| file == path && request.at.contains_range(range))
-                });
-        }
+        let covered = match request.placement {
+            Placement::Insert { covered } => covered,
+            Placement::Reuse => {
+                return self
+                    .bindings
+                    .iter()
+                    .any(|binding| matching(binding) && visible(binding) && same(binding))
+                    || self.references(cx).iter().any(|reference| {
+                        reference.lexical
+                            && matching(&reference.name)
+                            && same(&reference.name)
+                            && workspace
+                                .locate_known(cx, reference.span)
+                                .is_some_and(|(file, range)| file == path && request.at.contains_range(range))
+                    });
+            },
+        };
 
         // Module imports also affect children which glob-import that module.
         // Follow the actual compiler module edges, including external files.
@@ -192,7 +196,7 @@ impl Names {
             }
 
             if workspace.locate_known(cx, reference.span).is_some_and(|(file, range)| {
-                file == path && request.covered.iter().any(|covered| covered.contains_range(range))
+                file == path && covered.iter().any(|covered| covered.contains_range(range))
             }) {
                 return false;
             }

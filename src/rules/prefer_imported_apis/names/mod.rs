@@ -29,9 +29,21 @@ pub(super) struct NameRequest<'a> {
     pub(super) namespace: Namespace,
     pub(super) target: TextRange,
     pub(super) module_target: bool,
-    pub(super) reuse: bool,
+    pub(super) placement: Placement<'a>,
     pub(super) external: bool,
-    pub(super) covered: &'a [TextRange],
+}
+
+pub(super) enum Placement<'a> {
+    /// The name is already bound where the access resolves.
+    Reuse,
+    /// A new import is declared; references inside `covered` are rewritten by the same fix.
+    Insert { covered: &'a [TextRange] },
+}
+
+impl NameRequest<'_> {
+    pub(super) fn reuses(&self) -> bool {
+        matches!(self.placement, Placement::Reuse)
+    }
 }
 
 #[derive(Default)]

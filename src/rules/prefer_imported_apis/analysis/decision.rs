@@ -9,7 +9,10 @@ use rustc_hir::def::Namespace;
 use super::{
     super::{
         model::UseKind,
-        names::NameRequest,
+        names::{
+            NameRequest,
+            Placement,
+        },
     },
     Access,
     Checks,
@@ -74,9 +77,8 @@ fn root_available(
             namespace: Namespace::TypeNS,
             target: target.text_range(),
             module_target: target.kind() != SyntaxKind::STMT_LIST,
-            reuse: true,
+            placement: Placement::Reuse,
             external: true,
-            covered: &[],
         })
 }
 
@@ -134,7 +136,7 @@ pub(super) fn decide(
         }
     };
 
-    let request = |target: &SyntaxNode, reuse| NameRequest {
+    let request = |target: &SyntaxNode, placement| NameRequest {
         fact: access.fact,
         at: access.range,
         name: &binding.name,
@@ -142,12 +144,13 @@ pub(super) fn decide(
         namespace: binding.namespace,
         target: target.text_range(),
         module_target: target.kind() != SyntaxKind::STMT_LIST,
-        reuse,
+        placement,
         external: binding.external,
-        covered,
     };
 
-    if declarations::reusable(&access.node, &module, &binding, imports) && (checks.name)(request(&module, true)) {
+    if declarations::reusable(&access.node, &module, &binding, imports)
+        && (checks.name)(request(&module, Placement::Reuse))
+    {
         return Decision::Canonical {
             replacement: access.api.canonical(),
             import: None,
@@ -161,7 +164,7 @@ pub(super) fn decide(
     if binding.external
         || !root_available(access, &binding, &target, imports, checks)
         || !declarations::vacant(&target, &binding.name, binding.namespace)
-        || !(checks.name)(request(&target, false))
+        || !(checks.name)(request(&target, Placement::Insert { covered }))
     {
         return fallback();
     }

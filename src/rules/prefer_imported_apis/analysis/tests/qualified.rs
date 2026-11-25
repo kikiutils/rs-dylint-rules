@@ -42,7 +42,7 @@ fn fallback_and_fix_reuse_the_nearest_visible_import() {
         ra_ap_syntax::Edition::Edition2024,
         facts.iter().map(|(range, event)| (*range, event)),
         &super::super::Checks {
-            name: &|request| request.name != "io" || request.reuse,
+            name: &|request| request.name != "io" || request.reuses(),
             protected: &crate::syntax::protected,
         },
     );
