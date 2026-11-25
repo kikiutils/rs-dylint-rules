@@ -1,9 +1,5 @@
 # TODO
 
-## 測試
-
-- [ ] `tests/rules` 與 `tests/pass` 不穩定失敗（每次失敗的測試不同，未修改的 HEAD 也一樣）：fixture 建置成功，但 cargo 回報 `"fresh":true` 而沒有重跑 lint，輸出沒有診斷。`tests/support/mod.rs` 的 fixture 都叫 `lint-fixture` 並共用 `target/dylint-fixtures`，平行測試時疑似互相命中快取。改成每個 fixture 不共用快取（唯一的套件名或 metadata、或各自的 target 目錄）後重跑全部測試，再驗證 `NameRequest` 改用 `Placement` 的重構。
-
 ## 範本的 rustc／clippy 設定
 
 不需寫 dylint，在 `rs-crate-template`、`rs-crates-template` 的 `[lints.rust]`／`[workspace.lints.rust]` 開啟即可。

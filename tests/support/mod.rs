@@ -27,11 +27,21 @@ pub(crate) fn fixture(source: &str) -> Result<TempDir> {
 
 // Creates a fixture crate with `src/lib.rs` plus extra files relative to the crate root.
 pub(crate) fn fixture_with(source: &str, files: &[(&str, &str)]) -> Result<TempDir> {
-    let directory = tempfile::tempdir()?;
+    let directory = tempfile::Builder::new().prefix("lint-fixture-").tempdir()?;
+    // Fixtures share one target dir, and Cargo keys fingerprints and artifacts by package name
+    // rather than fixture path; a shared name lets another fixture's newer build make this
+    // fixture's lint run look fresh.
+    let name = directory
+        .path()
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_ascii_lowercase();
+
     write(
         &directory,
         "Cargo.toml",
-        "[package]\nname=\"lint-fixture\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[workspace]\n",
+        &format!("[package]\nname=\"{name}\"\nversion=\"0.1.0\"\nedition=\"2024\"\n[workspace]\n"),
     )?;
 
     write(&directory, "src/lib.rs", source)?;
