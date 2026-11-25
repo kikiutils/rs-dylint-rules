@@ -8,60 +8,33 @@
 
 各規則的 lint 名稱、實作狀態與 auto-fix 支援程度見[規則索引](rules/README.md)。本文件集中說明已實作規則的共用機制；草案的設計與未決事項留在各規則文件。
 
-## 模組分工
+## 分層
 
-| 模組 | 責任 |
-|---|---|
-| `src/lib.rs` | 從 `rules::Rule::VARIANTS` 註冊五個 lint，並註冊唯一的 `KikiRules` late pass。 |
-| `src/pass.rs` | 收集模組來源，將 HIR 事件分派給 collectors，於 crate 結束時逐檔分析與 emit。 |
-| `src/workspace.rs` | `Workspace`：快取來源路徑，記錄 crate 載入的檔案與模組來源（含共用檔案判定）。 |
-| `src/source.rs` | 讀取並解析單一來源檔，處理 BOM／CRLF 位移與 span 換算。 |
-| `src/facts.rs` | 依實體路徑分檔保存各規則的 compiler facts，每筆附 module 編號與 HirId。 |
-| `src/syntax.rs` | 共用 attributes 保護、條件邊界、註解與涵蓋節點 helper。 |
-| `src/derives.rs` | 共用 derive 登記表，依定義 crate 與 derive 名稱提供 helper metadata；各規則仍分別決定路徑修改及排序政策。 |
-| `src/diagnostic.rs` | 語法層的診斷與 edits，以及共用的 crate 層級 emit。 |
-| `src/rules/*/collect.rs`／`collect/` | 收集 rustc 語意並銜接各規則的分析。`statement_padding` 不需 facts，沒有 collector，其分析入口在 `mod.rs`。 |
-| `src/rules/*/analysis.rs`／`analysis/` | 依 CST、原文與 compiler facts 產生診斷與修正要求。 |
-| `src/rules/prefer_imported_apis/policy/` | 分檔宣告 API 家族，由公開 exports 建立 DefId 索引，集中直接名稱、指定 module 與完整 crate 前綴政策。 |
-| `src/rules/prefer_imported_apis/names/` | 收齊 rustc bindings 後解析原始路徑各段的 lexical／qualified references（包含 import 與已解析的 bang／attribute／derive 巨集前綴），依名稱空間、作用域與 glob 使用端判斷新增／重用名稱是否安全。 |
-| `src/rules/prefer_imported_apis/fix.rs` | 將 analysis 的共用決策轉為使用點替換及新增 imports；依 target／binding 去重，同檔所有 edits 合成一筆 multipart suggestion。 |
-| `src/test_support.rs` | analysis 單元測試套用 edits 的 helper。 |
-| `tests/rules/main.rs` | 規則專屬整合測試入口；`prefer_imported_apis/` 依家族與安全邊界分組，其他規則案例位於同目錄。跨規則與來源情境測試保留於 `tests/`。 |
-| `tests/support/mod.rs` | 整合測試共用 fixture、Cargo 執行及 JSON 診斷判讀；放在子目錄避免被 Cargo 當成獨立測試 target。 |
+- 所有規則共用一個 late lint pass。HIR 事件分派給需要的規則 collector，只記錄 rustc 語意（解析結果、module 歸屬、cfg 啟用狀態）；crate 結束時才逐檔讀取原文並執行各規則的分析。
+- 分析層依原文 CST、原文文字與 compiler facts 產生診斷與 edits。純語法的 `statement_padding` 不需要 facts。
+- attribute 保護與 derive 身分／helper 登記為各規則共用；各規則仍各自決定路徑修改與排序政策。
+- 整合測試以實際 fixture crate 執行 Dylint，判讀 JSON 診斷與套用修正後的原文。
 
-## 規則註冊與順序
+## 規則順序
 
-`src/rules/mod.rs` 的 `Rule::VARIANTS` 是 lint 註冊及逐檔分析、emit 順序的唯一來源：
-
-1. `prefer_imported_apis`
-2. `import_path_prefix`
-3. `import_module_order`
-4. `grouped_derive_order`
-5. `statement_padding`
-
-順序決定診斷的輸出先後，以及同一輪修正重疊時誰先套用；重疊的修正可能需要分多輪分析與套用。
-
-`Rule` 提供 lint、suggestion 說明及逐檔分析。HIR 收集由 `Collectors` 上與 lint pass 同名的 `check_*` 方法轉交給需要的 collector，與 `Rule::VARIANTS` 順序無關。
+規則的註冊順序也是逐檔分析與 emit 的順序，決定診斷輸出先後，以及同一輪修正重疊時誰先套用；重疊的修正可能需要分多輪分析與套用。HIR 收集與此順序無關。
 
 ## 執行流程
 
 語意以 rustc 為準；`ra_ap_syntax` 僅解析原文 CST，不建立 rust-analyzer 語意資料庫，也不自行探索模組關係。
 
 1. Dylint 以相同 nightly 的 driver 執行 Cargo 分析，rustc 決定 target、features 與 cfg 下實際載入的來源。
-2. `check_mod` 記錄模組來源。item、path、expression、generic parameter 與 foreign item 的 HIR 事件交給 `Collectors` 的對應 `check_*` 方法，供各 collector 收集語意。
-3. 來源路徑以 rustc `SourceFile` 的起始位置為 key 快取，包含無法使用的結果。工作目錄只 canonicalize 一次，僅納入位於該目錄內的實體來源。
-4. facts 依實體路徑分檔，每筆保留 module 編號與 HirId。分析前逐筆檢查來源是否屬於該模組。
-5. `check_crate_post` 逐檔以 `Source::load` 讀取並解析，每個路徑只處理一次，再按 `Rule::VARIANTS` 順序執行各規則的 analysis 與 emit。
-6. `RuleOutput` 統一由 crate 層級產生標準 rustc lint 與 `MachineApplicable` multipart suggestions。指定 `--fix` 時，由 Cargo fix 套用。
+2. 收集階段記錄模組來源與各規則需要的 facts。工作目錄只 canonicalize 一次，僅納入位於該目錄內的實體來源。facts 依實體路徑分檔，每筆保留 module 與 HirId；分析前逐筆檢查來源是否屬於該模組。
+3. crate 結束時逐檔讀取並解析原文，每個路徑只處理一次，再依規則順序分析與 emit。
+4. 所有診斷統一以標準 rustc lint 與 `MachineApplicable` multipart suggestions 輸出；指定 `--fix` 時由 Cargo fix 套用。
 
 同一次編譯中的各規則均分析 rustc 載入的原文；規則不自行套用 edits 或將中間修正結果交給下一條規則。
 
 ## 原文與診斷位置
 
 - 來源比對會移除 UTF-8 BOM 並將 CRLF 正規化為 LF，與 rustc 載入的文字比較。
-- CST 解析將開頭 BOM 替換成等長的三個空白，保留原始 byte offsets。`Source.text` 保存原文，供 analysis 直接切片。
-- facts 透過 `original_relative_byte_pos` 對應 CST；emit 透過 `normalized_byte_pos` 轉回 rustc spans。
-- 讀檔失敗、來源已變動或 CST 解析失敗時，輸出 warning 並略過該檔案。每個路徑只載入一次，同一檔案不會因五個規則而重複警告。
+- CST 解析將開頭 BOM 替換成等長的三個空白，保留原始 byte offsets，analysis 可直接切片原文；facts 與 emit 在原始 offsets 與 rustc 正規化後的位置之間換算。
+- 讀檔失敗、來源已變動或 CST 解析失敗時，輸出 warning 並略過該檔案；同一檔案不會因多個規則而重複警告。
 
 ## 分析範圍
 
@@ -73,13 +46,13 @@
 
 ## 診斷層級
 
-診斷統一以 `CRATE_HIR_ID` 輸出，遵守 crate 層級與命令列的 lint 設定，不查找 item 或 module 的 lint level。因此局部 `allow`／`expect` 不會套用至這些診斷。名稱解析所需的 HirId 仍保留。
+診斷統一以 `CRATE_HIR_ID` 輸出，遵守 crate 層級與命令列的 lint 設定，不查找 item 或 module 的 lint level。因此局部 `allow`／`expect` 不會套用至這些診斷。
 
 ## 安全邊界
 
 - 相同實體範圍被不同 module 載入時，語意規則可提供診斷但不提供 fix；純語法的 `statement_padding` 不受這項限制。一般 inline module 的範圍不同，不會因此停用語意規則的 fix。
-- import 與 derive 規則使用 `syntax::protected` 共用已知 builtin／tool attribute 安全清單（另含不讀取 derive 的 serde_with `skip_serializing_none`，以及原樣保留函式本體的 `tokio::test`／`tokio::main`）；`cfg_attr` 遞迴檢查所有分支，未知 attributes 保留屏障。derive helpers 另要求相同 item 有對應的已解析 derive。僅補空行的 `statement_padding` 不使用這項 attribute 判定。
-- `prefer_imported_apis` 的路徑替換另以 compiler-resolved derive facts 放行已知 derive／helper，包含 `cfg_attr` 包住的 derive 與其 helpers；這不放寬 derive 排序或未知 attribute macro。derive/helper metadata 由共用登記表提供，排序名單與路徑修改的放行範圍仍分開決定。imports 排序則僅放行原樣附著的 cfg／不含 expect 的 lint attributes，依修改操作分別判斷安全性。
+- import 與 derive 規則共用已知 builtin／tool attribute 安全清單（另含不讀取 derive 的 serde_with `skip_serializing_none`，以及原樣保留函式本體的 `tokio::test`／`tokio::main`）；`cfg_attr` 遞迴檢查所有分支，未知 attributes 保留屏障。derive helpers 另要求相同 item 有對應的已解析 derive。僅補空行的 `statement_padding` 不使用這項 attribute 判定。
+- `prefer_imported_apis` 的路徑替換另以 compiler-resolved derive facts 放行已知 derive／helper，包含 `cfg_attr` 包住的 derive 與其 helpers；這不放寬 derive 排序或未知 attribute macro；排序名單與路徑修改的放行範圍分開決定。imports 排序則僅放行原樣附著的 cfg／不含 expect 的 lint attributes，依修改操作分別判斷安全性。
 - API 家族對共享 re-exports 依 DefId 與來源 crate 篩選；std／core 替代路徑有明確優先級，不以宣告迭代順序決定衝突政策。
 - 標準 Result → anyhow Result 這類來源替換區分原 API 與目標 binding 的身分，不覆蓋或移除舊 binding；短名衝突時先使用完整路徑，不能把相同文字名稱當成相同型別定義。尚未載入 metadata 的直接依賴可依確切 `--extern` 名稱新增 import，但不以未知 DefId 當作既有 binding 的相等依據。
 - 搬移或拆分 imports 仍須保留各規則的註解、cfg、名稱解析與 `expect` 保護。安全 attribute 不代表可以任意搬移帶 attributes 的 item。

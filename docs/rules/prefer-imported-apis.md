@@ -103,11 +103,11 @@
 
 anstream 此項只涵蓋 `stdout`／`stderr` 函式，不連帶限制同名型別或輸出巨集；公開 API 見 [anstream 文件](https://docs.rs/anstream/latest/anstream/)。使用 crate namespace 不要求額外的 `use anstream;`。
 
-confique 保留完整的 `confique::<格式>::` 前綴，不直接匯入 `template`／`FormatOptions`，也不將格式 module 匯入為 `toml`、`yaml`、`json5` 或另設 alias，以區分同名格式 crates。此項只涵蓋表列函式與型別（含其關聯項目存取），不限制 `Config`／`Layer` traits 或其他未列 API；格式 features 見 [confique 文件](https://docs.rs/confique/0.4.0/confique/#cargo-features)。
+confique 保留完整的 `confique::<格式>::` 前綴，不直接匯入 `template`／`FormatOptions`，也不將格式 module 匯入為 `toml`、`yaml`、`json5` 或另設 alias，以區分同名格式 crates。此項只涵蓋表列函式與型別（含其關聯項目存取），不限制 `Config`／`Layer` traits 或其他未列 API；格式 features 見 [confique 文件](https://docs.rs/confique/latest/confique/#cargo-features)。
 
 `tokio::spawn` 與 `tokio::task::spawn` 若解析為相同 API，均使用 `tokio::task::spawn`。task／thread 型別只限制表列項目，不擴大至 `LocalSet`、`Thread` 等其他型別。
 
-鎖與 `Instant` 的 namespace 用於區分不同來源，只修正名稱，不替換鎖實作或時鐘型別。鎖的 guards、`Arc`、`Duration` 等未列項目可正常直接匯入；Tokio time 自由函式仍採上方直接匯入政策。parking_lot 的 `Mutex`／`RwLock` 是型別 aliases，依其公開身分處理，不將底層 lock_api 泛型型別連帶納入；公開 API 見 [parking_lot 文件](https://docs.rs/parking_lot/0.13.0/parking_lot/)。
+鎖與 `Instant` 的 namespace 用於區分不同來源，只修正名稱，不替換鎖實作或時鐘型別。鎖的 guards、`Arc`、`Duration` 等未列項目可正常直接匯入；Tokio time 自由函式仍採上方直接匯入政策。parking_lot 的 `Mutex`／`RwLock` 是型別 aliases，依其公開身分處理，不將底層 lock_api 泛型型別連帶納入；公開 API 見 [parking_lot 文件](https://docs.rs/parking_lot/latest/parking_lot/)。
 
 `std::fmt` 與 `tracing_subscriber::fmt` 是不同的 module，同時匯入為 `fmt` 會衝突。因此標準庫保留 `fmt::…`，tracing 一律保留完整 crate 前綴；`FormatEvent`／`FormatFields` 等 traits 可正常匯入，不擴大限制其他 tracing API。
 
@@ -187,7 +187,7 @@ fn fail() -> AnyhowResult<()> { // 改用 Result<()>，必要時新增 use anyho
 
 沿用[共用自動修正機制](../architecture.md#自動修正)與[安全邊界](../architecture.md#安全邊界)：
 
-- 回報與修正共用 `decide(access)`：規定形式 `Canonical`、不插入 import 的完整路徑 `FullPath`、不修的 `Skip`。符合決策的使用點不再回報；同一位置修正後再次分析應為零 issue。
+- 回報與修正依同一決策：改為規定形式、退回不新增 import 的完整路徑，或不修。符合決策的使用點不再回報，修正後再次分析不再產生診斷。
 - 只改使用點、只新增 `use 路徑;` 或 `use 路徑 as 別名;`；既有 `use` 一律不碰。unused import 交給 rustc，排序、合併與排版交給其他規則及 rustfmt。
 - 先獨立檢查能否安全重用使用點可見的既有 binding；即使 cfg 邊界內沒有 import 插入位置，仍可重用。既有 import 宣告本身或其到所在 scope 之間帶有 `#[cfg]` 時不重用，不以本次編譯可見性推論其他設定也安全。所在 scope 有帶 `#[cfg]` 的 glob import 時，亦保守停用名稱重用；此限制不追溯 scope 外的 cfg（例如 tests module 上的 cfg）。只有需要新增 import 時才選擇 target。
 - target 通常是所在檔案或 inline module，沒有 cfg 的函式內使用亦提升到 module。遇到最近的 `#[cfg]` 邊界時，取邊界內包含使用點的最外層函式本體或 block：cfg fn 取本體，cfg block 取該 block，cfg impl／trait 取所在方法本體；沒有 block（例如 initializer 不是 block 的 cfg let）則退回完整路徑。`cfg_attr` 不算此邊界。
@@ -200,10 +200,8 @@ fn fail() -> AnyhowResult<()> { // 改用 Result<()>，必要時新增 use anyho
 
 ## 驗證與安全性依據
 
-- 固定工具鏈見 [`rust-toolchain.toml`](../../rust-toolchain.toml)。單元測試依政策與分析分組於 [`policy/tests.rs`](../../src/rules/prefer_imported_apis/policy/tests.rs)、[`analysis/tests/`](../../src/rules/prefer_imported_apis/analysis/tests/mod.rs)；整合測試依 API 家族與安全邊界分組於 [`tests/rules/prefer_imported_apis/`](../../tests/rules/prefer_imported_apis/mod.rs)。測試檔案的存在不等同於特定 compiler／依賴版本已通過驗證。
-- 工具鏈固定為 `nightly-2026-10-15`；家族 fixtures 使用 anyhow `1.0.104`、Tokio `1.54.1`、parking_lot `0.13.0`、tracing-subscriber `0.3.23`（`default-features = false`、`features = ["fmt"]`）、anstream `1.0.0`、serde_json `1.0.154`、toml `1.2.1`、rmp-serde `1.3.1`、postcard `1.1.3`、ciborium `0.2.2`、hex `0.4.3` 與 confique `0.4.0`（TOML／YAML／JSON5）；另以 rusqlite `0.41.1`（bundled）驗證 Error 政策；系統家族 fixtures 使用 rustix `1.1.6`、libc `0.2.191`，derive 路徑修復包含 thiserror `2.0.21`。不因此宣稱其他平台、版本或所有 feature 組合皆已驗證。
 - 政策參考：標準庫 [prelude](https://doc.rust-lang.org/std/prelude/v1/index.html)、[io::Result](https://doc.rust-lang.org/std/io/type.Result.html)，以及 Tokio [time](https://docs.rs/tokio/latest/tokio/time/)／[task](https://docs.rs/tokio/latest/tokio/task/)。這些文件用於核對 API 與慣例，不代表本專案的命名政策或所有改寫已獲安全驗證。
-- 修正的驗證項目包括修正前後編譯／行為、完整修正原文比對與再次 lint 的冪等性；不將個別案例外推為所有 API 均可安全改寫。升級 compiler 或依賴時須重新查核解析身分與修正結果。
+- 不將個別案例外推為所有 API 均可安全改寫；升級 compiler 或依賴時須重新查核解析身分與修正結果。
 
 ## 未決事項或後續規劃
 

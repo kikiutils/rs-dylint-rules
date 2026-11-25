@@ -90,9 +90,7 @@ use std::sync::Arc;
 
 ## 驗證與安全性依據
 
-測試位置：單元測試見 [`src/rules/import_module_order/tests.rs`](../../src/rules/import_module_order/tests.rs)，整合測試見 [`tests/rules/import_module_order.rs`](../../tests/rules/import_module_order.rs)。
-
-工具鏈固定為 [`rust-toolchain.toml`](../../rust-toolchain.toml)。
+無
 
 ## 未決事項或後續規劃
 

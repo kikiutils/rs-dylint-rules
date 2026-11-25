@@ -119,7 +119,7 @@ pub fn run(values: &[u8]) -> Option<u8> {
 
 ## 驗證與安全性依據
 
-測試位置：純 CST 分析的單元測試見 [`src/rules/statement_padding/tests.rs`](../../src/rules/statement_padding/tests.rs)；Dylint 診斷與 auto-fix 的整合測試見 [`tests/rules/statement_padding.rs`](../../tests/rules/statement_padding.rs)。
+無：純語法規則，不依賴 compiler 解析結果或外部依賴。
 
 ## 未決事項或後續規劃
 

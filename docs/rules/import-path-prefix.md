@@ -171,9 +171,7 @@ use super::super::super::other::OtherType;
 
 ## 驗證與安全性依據
 
-測試位置：單元測試見 [`src/rules/import_path_prefix/tests.rs`](../../src/rules/import_path_prefix/tests.rs)，整合測試見 [`tests/rules/import_path_prefix.rs`](../../tests/rules/import_path_prefix.rs)。
-
-工具鏈固定為 [`rust-toolchain.toml`](../../rust-toolchain.toml)。
+無
 
 ## 未決事項或後續規劃
 

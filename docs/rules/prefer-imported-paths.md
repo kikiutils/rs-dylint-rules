@@ -11,7 +11,7 @@
 - 檢查對象為 imports 以外，自身 crate 路徑的使用點，包含運算式、型別、模式與巨集呼叫路徑；所有可見性的 imports 由 `import-path-prefix` 處理。
 - 預定遵守[共用分析範圍](../architecture.md#分析範圍)，只根據啟用中的 compiler facts 檢查；尚待確認的細節見[未決事項](#未決事項或後續規劃)。
 - 涵蓋檔案頂層、inline module、函式、方法、closure、async block、控制流程與其他巢狀區塊中符合本規則檢查對象的位置。
-- 遞迴檢查各作用域；涉及名稱、路徑或型別時，以 rustc 的實際解析結果為準。
+- 涉及名稱、路徑或型別時，以 rustc 的實際解析結果為準。
 
 ## 規則
 
