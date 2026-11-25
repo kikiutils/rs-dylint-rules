@@ -16,9 +16,8 @@ use crate::{
     workspace::Workspace,
 };
 
-// Every rule, for lint registration and per-file analysis. The order only sets
-// diagnostic order and which overlapping fix applies first; `cargo fix` reruns
-// until stable, so it never changes the final result.
+// The order only sets diagnostic order and which overlapping fix applies first;
+// `cargo fix` reruns until stable, so it never changes the final result.
 #[derive(Clone, Copy, VariantArray)]
 pub(crate) enum Rule {
     PreferImportedApis,
@@ -36,7 +35,6 @@ pub(crate) struct Collectors {
     grouped_derive_order: grouped_derive_order::collect::Collector,
 }
 
-// HIR hooks forwarded from the lint pass to the collectors that need them.
 impl Collectors {
     pub(crate) fn check_item<'tcx>(
         &mut self,

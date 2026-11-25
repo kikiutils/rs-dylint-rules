@@ -22,7 +22,6 @@ pub(crate) struct Fact<T> {
     pub(crate) value: T,
 }
 
-// Compiler facts grouped by physical file; each keeps its owning module.
 pub(crate) struct Facts<T> {
     files: BTreeMap<Path, Vec<Fact<T>>>,
 }

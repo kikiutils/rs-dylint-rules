@@ -31,7 +31,6 @@ pub(super) struct Entry {
     active: bool,
 }
 
-// Resolution and activation come from the compiler; ordering uses original CST nodes.
 pub(super) fn analyze(
     root: &SyntaxNode,
     resolve: &impl Fn(&ast::Path) -> Option<Group>,

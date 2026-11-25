@@ -79,7 +79,6 @@ pub(crate) fn run_with_args(
     targets: &[&str],
 ) -> Result<process::Output> {
     let mut command = cargo(directory);
-    // Allow every kiki lint, then warn only the requested ones.
     let flags = std::iter::once("-A unused".to_owned())
         .chain(LINTS.iter().map(|lint| format!("-A {lint}")))
         .chain(lints.iter().map(|lint| format!("-W {lint}")))

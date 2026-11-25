@@ -19,7 +19,6 @@ pub(super) enum UseKind {
     Trait,
 }
 
-// Source occurrences retain their compiler identity in Facts<Event>.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(super) enum Event {
     Use {

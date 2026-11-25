@@ -63,8 +63,6 @@ impl ModuleSources {
     }
 }
 
-// Crate-wide view of the workspace files seen during collection. The workspace
-// root and every rustc source file lookup are canonicalized once and cached.
 #[derive(Default)]
 pub(crate) struct Workspace {
     root: OnceCell<Option<Path>>,
@@ -111,7 +109,6 @@ impl Workspace {
         Some((path, Self::range(&file, span)))
     }
 
-    // Read-only lookup for files already located during collection.
     pub(crate) fn locate_known(&self, cx: &LateContext<'_>, span: Span) -> Option<(&Path, TextRange)> {
         let file = Self::file(cx, span)?;
         let path = self.paths.get(&file.start_pos)?.as_ref()?;

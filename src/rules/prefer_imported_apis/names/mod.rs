@@ -34,10 +34,11 @@ pub(super) struct NameRequest<'a> {
 }
 
 pub(super) enum Placement<'a> {
-    /// The name is already bound where the access resolves.
     Reuse,
     /// A new import is declared; references inside `covered` are rewritten by the same fix.
-    Insert { covered: &'a [TextRange] },
+    Insert {
+        covered: &'a [TextRange],
+    },
 }
 
 impl NameRequest<'_> {
